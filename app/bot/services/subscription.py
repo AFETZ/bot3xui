@@ -57,11 +57,19 @@ class SubscriptionService:
             return False
 
         logger.info(f"Begun giving trial period for user {user.tg_id}.")
-        trial_success = await self.vpn_service.process_bonus_days(
-            user,
-            duration=self.config.shop.TRIAL_PERIOD,
-            devices=self.config.shop.BONUS_DEVICES_COUNT,
-        )
+        try:
+            trial_success = await self.vpn_service.process_bonus_days(
+                user,
+                duration=self.config.shop.TRIAL_PERIOD,
+                devices=self.config.shop.BONUS_DEVICES_COUNT,
+            )
+        except Exception as exception:
+            logger.exception(
+                f"Unexpected error while giving trial to user {user.tg_id}: {exception}"
+            )
+            async with self.session_factory() as session:
+                await User.update_trial_status(session=session, tg_id=user.tg_id, used=False)
+            return False
 
         if trial_success:
             logger.info(

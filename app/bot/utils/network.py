@@ -20,7 +20,8 @@ async def ping_url(url: str, timeout: int = 5) -> float | None:
         return None
 
 
-def extract_base_url(url: str, port: int, path: str) -> str:
+def extract_base_url(url: str, port: int, path: str, scheme: str | None = None) -> str:
     parsed_url = urlparse(url)
-    base_url = f"{parsed_url.scheme}://{parsed_url.hostname}:{port}"
+    base_scheme = scheme or parsed_url.scheme
+    base_url = f"{base_scheme}://{parsed_url.hostname}:{port}"
     return urljoin(base_url, path)

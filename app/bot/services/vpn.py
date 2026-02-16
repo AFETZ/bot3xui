@@ -35,13 +35,35 @@ class VPNService:
         self.server_pool_service = server_pool_service
         logger.info("VPN Service initialized.")
 
+    @staticmethod
+    def _resolve_client_flow(inbound: Inbound | None) -> str:
+        if not inbound or not inbound.stream_settings:
+            return ""
+
+        stream_settings = inbound.stream_settings
+        network = getattr(stream_settings, "network", None)
+        security = getattr(stream_settings, "security", None)
+
+        if network is None and hasattr(stream_settings, "get"):
+            network = stream_settings.get("network")
+        if security is None and hasattr(stream_settings, "get"):
+            security = stream_settings.get("security")
+
+        if network == "tcp" and security in {"reality", "tls"}:
+            return "xtls-rprx-vision"
+        return ""
+
     async def is_client_exists(self, user: User) -> Client | None:
         connection = await self.server_pool_service.get_connection(user)
 
         if not connection:
             return None
 
-        client = await connection.api.client.get_by_email(str(user.tg_id))
+        try:
+            client = await connection.api.client.get_by_email(str(user.tg_id))
+        except Exception as exception:
+            logger.error(f"Error checking client {user.tg_id} on server {connection.server.name}: {exception}")
+            return None
 
         if client:
             logger.debug(f"Client {user.tg_id} exists on server {connection.server.name}.")
@@ -127,6 +149,7 @@ class VPNService:
             url=user.server.host,
             port=self.config.xui.SUBSCRIPTION_PORT,
             path=self.config.xui.SUBSCRIPTION_PATH,
+            scheme=self.config.xui.SUBSCRIPTION_SCHEME,
         )
         key = f"{subscription}{user.vpn_id}"
         logger.debug(f"Fetched key for {user.tg_id}: {key}.")
@@ -138,7 +161,7 @@ class VPNService:
         devices: int,
         duration: int,
         enable: bool = True,
-        flow: str = "xtls-rprx-vision",
+        flow: str | None = None,
         total_gb: int = 0,
         inbound_id: int = 1,
     ) -> bool:
@@ -150,6 +173,13 @@ class VPNService:
         if not connection:
             return False
 
+        inbound = await self.server_pool_service.get_inbound(connection.api)
+        if not inbound:
+            return False
+
+        if flow is None:
+            flow = self._resolve_client_flow(inbound)
+
         new_client = Client(
             email=str(user.tg_id),
             enable=enable,
@@ -160,7 +190,7 @@ class VPNService:
             sub_id=user.vpn_id,
             total_gb=total_gb,
         )
-        inbound_id = await self.server_pool_service.get_inbound_id(connection.api)
+        inbound_id = inbound.id
 
         try:
             await connection.api.client.add(inbound_id=inbound_id, clients=[new_client])
@@ -178,7 +208,7 @@ class VPNService:
         replace_devices: bool = False,
         replace_duration: bool = False,
         enable: bool = True,
-        flow: str = "xtls-rprx-vision",
+        flow: str | None = None,
         total_gb: int = 0,
     ) -> bool:
         logger.info(f"Updating client {user.tg_id} | {devices} devices {duration} days.")
@@ -210,7 +240,7 @@ class VPNService:
             client.enable = enable
             client.id = user.vpn_id
             client.expiry_time = expiry_time
-            client.flow = flow
+            client.flow = client.flow if flow is None else flow
             client.limit_ip = devices
             client.sub_id = user.vpn_id
             client.total_gb = total_gb

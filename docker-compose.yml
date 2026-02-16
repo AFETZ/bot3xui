@@ -5,7 +5,7 @@ services:
     restart: always
     ports:
       - "80:80"
-      - "443:443"
+      - "8443:443"
     env_file:
       - .env
     volumes:
@@ -50,7 +50,7 @@ services:
       - redis
     labels:
       - "traefik.enable=true"
-      - "traefik.http.routers.bot.rule=Host(`${BOT_DOMAIN}`)"
+      - "traefik.http.routers.bot.rule=Host(`${BOT_HOST}`)"
       - "traefik.http.routers.bot.entrypoints=websecure"
       - "traefik.http.routers.bot.tls.certresolver=letsencrypt"
       - "traefik.http.services.bot.loadbalancer.server.port=8080"

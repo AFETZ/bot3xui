@@ -97,6 +97,7 @@ class XUIConfig:
     USERNAME: str
     PASSWORD: str
     TOKEN: str | None
+    SUBSCRIPTION_SCHEME: str | None
     SUBSCRIPTION_PORT: int
     SUBSCRIPTION_PATH: str
 
@@ -183,6 +184,15 @@ def load_config() -> Config:
     xui_token = env.str("XUI_TOKEN", default=None)
     if not xui_token:
         logger.warning("XUI_TOKEN is not set.")
+
+    xui_subscription_scheme = env.str("XUI_SUBSCRIPTION_SCHEME", default=None)
+    if xui_subscription_scheme:
+        xui_subscription_scheme = xui_subscription_scheme.lower()
+        if xui_subscription_scheme not in {"http", "https"}:
+            logger.error(
+                "XUI_SUBSCRIPTION_SCHEME must be either 'http' or 'https'. Falling back to host scheme."
+            )
+            xui_subscription_scheme = None
 
     payment_stars_enabled = env.bool(
         "SHOP_PAYMENT_STARS_ENABLED",
@@ -341,6 +351,7 @@ def load_config() -> Config:
             USERNAME=env.str("XUI_USERNAME"),
             PASSWORD=env.str("XUI_PASSWORD"),
             TOKEN=xui_token,
+            SUBSCRIPTION_SCHEME=xui_subscription_scheme,
             SUBSCRIPTION_PORT=env.int("XUI_SUBSCRIPTION_PORT", default=DEFAULT_SUBSCRIPTION_PORT),
             SUBSCRIPTION_PATH=env.str(
                 "XUI_SUBSCRIPTION_PATH",
