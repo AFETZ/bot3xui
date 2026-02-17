@@ -1,6 +1,7 @@
 from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 from aiogram.utils.i18n import gettext as _
 from aiogram.utils.keyboard import InlineKeyboardBuilder
+from urllib.parse import urlencode
 
 from app.bot.routers.misc.keyboard import back_button, back_to_main_menu_button
 from app.bot.utils.constants import (
@@ -49,14 +50,18 @@ def download_keyboard(platform: NavDownload, url: str, key: str) -> InlineKeyboa
         case NavDownload.PLATFORM_IOS:
             scheme = APP_IOS_SCHEME
             download = APP_IOS_LINK
+            platform_param = "ios"
         case NavDownload.PLATFORM_ANDROID:
             scheme = APP_ANDROID_SCHEME
             download = APP_ANDROID_LINK
+            platform_param = "android"
         case _:
             scheme = APP_WINDOWS_SCHEME
             download = APP_WINDOWS_LINK
+            platform_param = "windows"
 
-    connect = f"{url}{CONNECTION_WEBHOOK}?scheme={scheme}&key={key}"
+    connect_params = urlencode({"scheme": scheme, "key": key, "platform": platform_param})
+    connect = f"{url}{CONNECTION_WEBHOOK}?{connect_params}"
 
     builder.button(text=_("download:button:download"), url=download)
 
