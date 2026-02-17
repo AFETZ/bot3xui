@@ -15,14 +15,21 @@ from app.bot.utils.formatting import format_subscription_period
 from app.bot.utils.navigation import NavAdminTools
 from app.db.models import Promocode, User
 
-from .keyboard import promocode_duration_keyboard, promocode_editor_keyboard
+from .keyboard import (
+    PROMOCODE_CUSTOM_DURATION_CALLBACK,
+    promocode_duration_keyboard,
+    promocode_editor_keyboard,
+)
 
 logger = logging.getLogger(__name__)
 router = Router(name=__name__)
+PROMOCODE_MIN_DAYS = 1
+PROMOCODE_MAX_DAYS = 3650
 
 
 class CreatePromocodeStates(StatesGroup):
     selecting_duration = State()
+    input_duration = State()
 
 
 class DeletePromocodeStates(StatesGroup):
@@ -32,6 +39,20 @@ class DeletePromocodeStates(StatesGroup):
 class EditPromocodeStates(StatesGroup):
     promocode_input = State()
     selecting_duration = State()
+    input_duration = State()
+
+
+def _parse_duration(value: str | None) -> int | None:
+    if not value:
+        return None
+    cleaned = value.strip()
+    if not cleaned.isdigit():
+        return None
+
+    duration = int(cleaned)
+    if PROMOCODE_MIN_DAYS <= duration <= PROMOCODE_MAX_DAYS:
+        return duration
+    return None
 
 
 async def show_promocode_editor_main(message: Message, state: FSMContext) -> None:
@@ -62,16 +83,43 @@ async def callback_create_promocode(callback: CallbackQuery, user: User, state: 
     )
 
 
-@router.callback_query(CreatePromocodeStates.selecting_duration, IsAdmin())
-async def callback_duration_selected(
+@router.callback_query(
+    CreatePromocodeStates.selecting_duration,
+    IsAdmin(),
+    (F.data == PROMOCODE_CUSTOM_DURATION_CALLBACK) | F.data.regexp(r"^\d+$"),
+)
+async def callback_create_duration_selected(
     callback: CallbackQuery,
     user: User,
     session: AsyncSession,
     state: FSMContext,
     services: ServicesContainer,
 ) -> None:
-    logger.info(f"Admin {user.tg_id} selected {callback.data} days for promocode.")
-    promocode = await Promocode.create(session=session, duration=int(callback.data))
+    if callback.data == PROMOCODE_CUSTOM_DURATION_CALLBACK:
+        logger.info(f"Admin {user.tg_id} switched to manual duration input for promocode creation.")
+        await state.set_state(CreatePromocodeStates.input_duration)
+        await callback.message.edit_text(
+            text=_("promocode_editor:message:enter_duration").format(
+                min_days=PROMOCODE_MIN_DAYS,
+                max_days=PROMOCODE_MAX_DAYS,
+            ),
+            reply_markup=back_keyboard(NavAdminTools.CREATE_PROMOCODE),
+        )
+        return
+
+    duration = _parse_duration(callback.data)
+    if duration is None:
+        await services.notification.show_popup(
+            callback=callback,
+            text=_("promocode_editor:ntf:duration_invalid").format(
+                min_days=PROMOCODE_MIN_DAYS,
+                max_days=PROMOCODE_MAX_DAYS,
+            ),
+        )
+        return
+
+    logger.info(f"Admin {user.tg_id} selected {duration} days for promocode.")
+    promocode = await Promocode.create(session=session, duration=duration)
     await show_promocode_editor_main(message=callback.message, state=state)
 
     if promocode:
@@ -85,6 +133,46 @@ async def callback_duration_selected(
     else:
         await services.notification.notify_by_message(
             message=callback.message,
+            text=_("promocode_editor:ntf:create_failed"),
+            duration=5,
+        )
+
+
+@router.message(CreatePromocodeStates.input_duration, IsAdmin())
+async def handle_create_duration_input(
+    message: Message,
+    user: User,
+    session: AsyncSession,
+    state: FSMContext,
+    services: ServicesContainer,
+) -> None:
+    duration = _parse_duration(message.text)
+    if duration is None:
+        await services.notification.notify_by_message(
+            message=message,
+            text=_("promocode_editor:ntf:duration_invalid").format(
+                min_days=PROMOCODE_MIN_DAYS,
+                max_days=PROMOCODE_MAX_DAYS,
+            ),
+            duration=5,
+        )
+        return
+
+    logger.info(f"Admin {user.tg_id} entered manual duration {duration} days for promocode.")
+    promocode = await Promocode.create(session=session, duration=duration)
+    await show_promocode_editor_main(message=message, state=state)
+
+    if promocode:
+        await services.notification.notify_by_message(
+            message=message,
+            text=_("promocode_editor:ntf:created_success").format(
+                promocode=promocode.code,
+                duration=format_subscription_period(promocode.duration),
+            ),
+        )
+    else:
+        await services.notification.notify_by_message(
+            message=message,
             text=_("promocode_editor:ntf:create_failed"),
             duration=5,
         )
@@ -177,24 +265,90 @@ async def handle_promocode_input(
         )
 
 
-@router.callback_query(EditPromocodeStates.selecting_duration, IsAdmin())
-async def callback_duration_selected(
+@router.callback_query(
+    EditPromocodeStates.selecting_duration,
+    IsAdmin(),
+    (F.data == PROMOCODE_CUSTOM_DURATION_CALLBACK) | F.data.regexp(r"^\d+$"),
+)
+async def callback_edit_duration_selected(
     callback: CallbackQuery,
     user: User,
     session: AsyncSession,
     state: FSMContext,
     services: ServicesContainer,
 ) -> None:
-    logger.info(f"Admin {user.tg_id} selected {callback.data} days for promocode.")
+    if callback.data == PROMOCODE_CUSTOM_DURATION_CALLBACK:
+        logger.info(f"Admin {user.tg_id} switched to manual duration input for promocode editing.")
+        await state.set_state(EditPromocodeStates.input_duration)
+        await callback.message.edit_text(
+            text=_("promocode_editor:message:enter_duration").format(
+                min_days=PROMOCODE_MIN_DAYS,
+                max_days=PROMOCODE_MAX_DAYS,
+            ),
+            reply_markup=back_keyboard(NavAdminTools.EDIT_PROMOCODE),
+        )
+        return
+
+    duration = _parse_duration(callback.data)
+    if duration is None:
+        await services.notification.show_popup(
+            callback=callback,
+            text=_("promocode_editor:ntf:duration_invalid").format(
+                min_days=PROMOCODE_MIN_DAYS,
+                max_days=PROMOCODE_MAX_DAYS,
+            ),
+        )
+        return
+
+    logger.info(f"Admin {user.tg_id} selected {duration} days for promocode.")
     input_promocode = await state.get_value(INPUT_PROMOCODE_KEY)
     promocode = await Promocode.update(
         session=session,
         code=input_promocode,
-        duration=int(callback.data),
+        duration=duration,
     )
     await show_promocode_editor_main(message=callback.message, state=state)
     await services.notification.notify_by_message(
         message=callback.message,
+        text=_("promocode_editor:ntf:edited_success").format(
+            promocode=promocode.code,
+            duration=format_subscription_period(promocode.duration),
+        ),
+    )
+
+
+@router.message(EditPromocodeStates.input_duration, IsAdmin())
+async def handle_edit_duration_input(
+    message: Message,
+    user: User,
+    session: AsyncSession,
+    state: FSMContext,
+    services: ServicesContainer,
+) -> None:
+    duration = _parse_duration(message.text)
+    if duration is None:
+        await services.notification.notify_by_message(
+            message=message,
+            text=_("promocode_editor:ntf:duration_invalid").format(
+                min_days=PROMOCODE_MIN_DAYS,
+                max_days=PROMOCODE_MAX_DAYS,
+            ),
+            duration=5,
+        )
+        return
+
+    input_promocode = await state.get_value(INPUT_PROMOCODE_KEY)
+    logger.info(
+        f"Admin {user.tg_id} entered manual duration {duration} days for promocode {input_promocode}."
+    )
+    promocode = await Promocode.update(
+        session=session,
+        code=input_promocode,
+        duration=duration,
+    )
+    await show_promocode_editor_main(message=message, state=state)
+    await services.notification.notify_by_message(
+        message=message,
         text=_("promocode_editor:ntf:edited_success").format(
             promocode=promocode.code,
             duration=format_subscription_period(promocode.duration),

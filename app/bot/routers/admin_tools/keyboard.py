@@ -11,6 +11,8 @@ from app.bot.utils.navigation import NavAdminTools
 from app.db.models import Server
 from app.db.models.invite import Invite
 
+PROMOCODE_CUSTOM_DURATION_CALLBACK = "promocode_custom_duration"
+
 
 def admin_tools_keyboard(is_dev: bool) -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
@@ -112,17 +114,24 @@ def promocode_editor_keyboard() -> InlineKeyboardMarkup:
 
 def promocode_duration_keyboard() -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
-    duration_options = [1, 7, 30, 90, 365]
+    duration_options = [1, 2, 3, 4, 5, 6, 7, 14, 20, 30, 90, 180, 365]
 
     for duration in duration_options:
         duration_text = _("1 day", "{} days", duration).format(duration)
-        button = InlineKeyboardButton(
-            text=duration_text,
-            callback_data=f"{duration}",
+        builder.add(
+            InlineKeyboardButton(
+                text=duration_text,
+                callback_data=f"{duration}",
+            )
         )
-        builder.row(button)
 
-    builder.adjust(2)
+    builder.adjust(3)
+    builder.row(
+        InlineKeyboardButton(
+            text=_("promocode_editor:button:manual_duration"),
+            callback_data=PROMOCODE_CUSTOM_DURATION_CALLBACK,
+        )
+    )
     builder.row(back_button(NavAdminTools.PROMOCODE_EDITOR))
     return builder.as_markup()
 

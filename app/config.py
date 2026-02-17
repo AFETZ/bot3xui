@@ -68,6 +68,7 @@ class BotConfig:
     SUPPORT_ID: int
     DOMAIN: str
     PORT: int
+    START_IMAGE: str | None
 
 
 @dataclass
@@ -286,6 +287,7 @@ def load_config() -> Config:
             SUPPORT_ID=env.int("BOT_SUPPORT_ID"),
             DOMAIN=f"https://{env.str('BOT_DOMAIN')}",
             PORT=env.int("BOT_PORT", default=DEFAULT_BOT_PORT),
+            START_IMAGE=env.str("BOT_START_IMAGE", default=None),
         ),
         shop=ShopConfig(
             EMAIL=env.str("SHOP_EMAIL", default=DEFAULT_SHOP_EMAIL),

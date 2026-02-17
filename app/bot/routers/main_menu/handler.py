@@ -1,17 +1,18 @@
 import logging
+from pathlib import Path
 
 from aiogram import Bot, F, Router
 from aiogram.filters import Command, CommandObject
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.storage.base import StorageKey
 from aiogram.fsm.storage.redis import RedisStorage
-from aiogram.types import CallbackQuery, Message
+from aiogram.types import CallbackQuery, FSInputFile, Message
 from aiogram.utils.i18n import gettext as _
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.bot.filters import IsAdmin
 from app.bot.models import ServicesContainer
-from app.bot.utils.constants import MAIN_MESSAGE_ID_KEY
+from app.bot.utils.constants import MAIN_MEDIA_MESSAGE_ID_KEY, MAIN_MESSAGE_ID_KEY
 from app.bot.utils.navigation import NavMain
 from app.config import Config
 from app.db.models import Invite, Referral, User
@@ -80,15 +81,16 @@ async def command_main_menu(
 ) -> None:
     logger.info(f"User {user.tg_id} opened main menu page.")
     previous_message_id = await state.get_value(MAIN_MESSAGE_ID_KEY)
+    previous_media_message_id = await state.get_value(MAIN_MEDIA_MESSAGE_ID_KEY)
 
-    if previous_message_id:
+    for message_id in {previous_message_id, previous_media_message_id} - {None}:
         try:
-            await message.bot.delete_message(chat_id=user.tg_id, message_id=previous_message_id)
-            logger.debug(f"Main message for user {user.tg_id} deleted.")
+            await message.bot.delete_message(chat_id=user.tg_id, message_id=message_id)
+            logger.debug(f"Main message {message_id} for user {user.tg_id} deleted.")
         except Exception as exception:
-            logger.error(f"Failed to delete main message for user {user.tg_id}: {exception}")
-        finally:
-            await state.clear()
+            logger.error(f"Failed to delete main message {message_id} for user {user.tg_id}: {exception}")
+
+    await state.clear()
 
     if command.args and is_new_user:
         if command.args.isdigit():
@@ -99,16 +101,37 @@ async def command_main_menu(
             await process_invite_attribution(session=session, user=user, invite_hash=command.args)
 
     is_admin = await IsAdmin()(user_id=user.tg_id)
-    main_menu = await message.answer(
-        text=_("main_menu:message:main").format(name=user.first_name),
-        reply_markup=main_menu_keyboard(
-            is_admin,
-            is_referral_available=config.shop.REFERRER_REWARD_ENABLED,
-            is_trial_available=await services.subscription.is_trial_available(user),
-            is_referred_trial_available=await services.referral.is_referred_trial_available(user),
-        ),
+    reply_markup = main_menu_keyboard(
+        is_admin,
+        is_referral_available=config.shop.REFERRER_REWARD_ENABLED,
+        is_trial_available=await services.subscription.is_trial_available(user),
+        is_referred_trial_available=await services.referral.is_referred_trial_available(user),
     )
-    await state.update_data({MAIN_MESSAGE_ID_KEY: main_menu.message_id})
+    text = _("main_menu:message:main").format(name=user.first_name)
+
+    media_message_id = None
+    if config.bot.START_IMAGE:
+        try:
+            start_image = (
+                FSInputFile(config.bot.START_IMAGE)
+                if Path(config.bot.START_IMAGE).exists()
+                else config.bot.START_IMAGE
+            )
+            start_media = await message.answer_photo(
+                photo=start_image,
+            )
+            media_message_id = start_media.message_id
+        except Exception as exception:
+            logger.error(f"Failed to send start image for user {user.tg_id}: {exception}")
+
+    main_menu = await message.answer(
+        text=text,
+        reply_markup=reply_markup,
+    )
+    state_data = {MAIN_MESSAGE_ID_KEY: main_menu.message_id}
+    if media_message_id:
+        state_data[MAIN_MEDIA_MESSAGE_ID_KEY] = media_message_id
+    await state.update_data(state_data)
 
 
 @router.callback_query(F.data == NavMain.MAIN_MENU)
@@ -123,15 +146,15 @@ async def callback_main_menu(
     await state.clear()
     await state.update_data({MAIN_MESSAGE_ID_KEY: callback.message.message_id})
     is_admin = await IsAdmin()(user_id=user.tg_id)
-    await callback.message.edit_text(
-        text=_("main_menu:message:main").format(name=user.first_name),
-        reply_markup=main_menu_keyboard(
-            is_admin,
-            is_referral_available=config.shop.REFERRER_REWARD_ENABLED,
-            is_trial_available=await services.subscription.is_trial_available(user),
-            is_referred_trial_available=await services.referral.is_referred_trial_available(user),
-        ),
+    reply_markup = main_menu_keyboard(
+        is_admin,
+        is_referral_available=config.shop.REFERRER_REWARD_ENABLED,
+        is_trial_available=await services.subscription.is_trial_available(user),
+        is_referred_trial_available=await services.referral.is_referred_trial_available(user),
     )
+    text = _("main_menu:message:main").format(name=user.first_name)
+
+    await callback.message.edit_text(text=text, reply_markup=reply_markup)
 
 
 async def redirect_to_main_menu(
@@ -152,20 +175,20 @@ async def redirect_to_main_menu(
 
     main_message_id = await state.get_value(MAIN_MESSAGE_ID_KEY)
     is_admin = await IsAdmin()(user_id=user.tg_id)
+    reply_markup = main_menu_keyboard(
+        is_admin,
+        is_referral_available=config.shop.REFERRER_REWARD_ENABLED,
+        is_trial_available=await services.subscription.is_trial_available(user),
+        is_referred_trial_available=await services.referral.is_referred_trial_available(user),
+    )
+    text = _("main_menu:message:main").format(name=user.first_name)
 
     try:
         await bot.edit_message_text(
-            text=_("main_menu:message:main").format(name=user.first_name),
+            text=text,
             chat_id=user.tg_id,
             message_id=main_message_id,
-            reply_markup=main_menu_keyboard(
-                is_admin,
-                is_referral_available=config.shop.REFERRER_REWARD_ENABLED,
-                is_trial_available=await services.subscription.is_trial_available(user),
-                is_referred_trial_available=await services.referral.is_referred_trial_available(
-                    user
-                ),
-            ),
+            reply_markup=reply_markup,
         )
     except Exception as exception:
         logger.error(f"Error redirecting to main menu page: {exception}")

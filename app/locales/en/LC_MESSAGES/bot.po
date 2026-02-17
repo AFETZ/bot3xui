@@ -500,7 +500,18 @@ msgid "promocode_editor:message:create"
 msgstr ""
 "🎟️ <b>Create promocode:</b>\n"
 "\n"
-"<i>Specify the duration</i>"
+"<i>Choose a duration button or enter days manually</i>"
+
+#: app/bot/routers/admin_tools/keyboard.py:130
+msgid "promocode_editor:button:manual_duration"
+msgstr "✍️ Enter days manually"
+
+#: app/bot/routers/admin_tools/promocode_handler.py:89
+msgid "promocode_editor:message:enter_duration"
+msgstr ""
+"🎟️ <b>Enter promocode duration:</b>\n"
+"\n"
+"<i>Send number of days from {min_days} to {max_days}</i>"
 
 #: app/bot/routers/admin_tools/promocode_handler.py:80
 msgid "promocode_editor:ntf:created_success"
@@ -548,6 +559,12 @@ msgstr ""
 #: app/bot/routers/admin_tools/promocode_handler.py:175
 msgid "promocode_editor:ntf:edit_failed"
 msgstr "❌ <i>Promocode not found or already activated.</i>"
+
+#: app/bot/routers/admin_tools/promocode_handler.py:221
+msgid "promocode_editor:ntf:duration_invalid"
+msgstr ""
+"❌ <i>Invalid duration. Enter number of days from {min_days} to "
+"{max_days}.</i>"
 
 #: app/bot/routers/admin_tools/promocode_handler.py:198
 msgid "promocode_editor:ntf:edited_success"
@@ -719,16 +736,16 @@ msgid "main_menu:message:main"
 msgstr ""
 "Welcome, {name}! 🎉\n"
 "\n"
-"3X-UI SHOP — your reliable assistant in the world of free internet. We "
-"offer safe and fast connections to any internet services using the XRAY "
-"protocol. Our service works even in China, Iran, and Russia.\n"
+"<b>AVS: AFETZ VPN SERVICE</b> is a reliable VPN with fast access to websites "
+"and apps.\n"
 "\n"
-"🚀 HIGH SPEED\n"
-"🔒 SECURITY\n"
-"📱 SUPPORT FOR ALL PLATFORMS\n"
-"♾️ UNLIMITED\n"
-"✅ GUARANTEE AND TRIAL PERIOD\n"
-"👥 REFERRAL SYSTEM\n"
+"⚡️ Stable high speed\n"
+"🔒 Traffic privacy and security\n"
+"📱 iOS / Android / Windows\n"
+"🌍 Works where internet access is restricted\n"
+"💳 Payment and renewal in a few clicks\n"
+"\n"
+"Choose an action below to get started."
 
 #: app/bot/routers/main_menu/keyboard.py:25
 msgid "referral:button:get_referred_trial"
@@ -1236,4 +1253,3 @@ msgid "1 month"
 msgid_plural "{} months"
 msgstr[0] ""
 msgstr[1] ""
-
