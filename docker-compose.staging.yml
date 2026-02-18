@@ -1,0 +1,35 @@
+services:
+  redis-staging:
+    image: redis:latest
+    container_name: 3xui-shop-redis-staging
+    restart: unless-stopped
+    volumes:
+      - redis_staging_data:/data
+
+  bot-staging:
+    build: .
+    container_name: 3xui-shop-bot-staging
+    volumes:
+      - ./app/data-staging:/app/data
+      - ./plans.staging.json:/app/data/plans.json
+      - ./app/locales:/app/locales
+      - ./app/logs:/app/logs
+    env_file:
+      - .env.staging
+    stop_signal: SIGINT
+    restart: unless-stopped
+    command: sh -c "
+      poetry run pybabel compile -d /app/locales -D bot &&
+      poetry run alembic -c /app/db/alembic.ini upgrade head &&
+      poetry run python /app/__main__.py"
+    depends_on:
+      - redis-staging
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.bot-staging.rule=Host(`${BOT_STAGING_HOST:-staging.example.invalid}`)"
+      - "traefik.http.routers.bot-staging.entrypoints=websecure"
+      - "traefik.http.routers.bot-staging.tls.certresolver=letsencrypt"
+      - "traefik.http.services.bot-staging.loadbalancer.server.port=8080"
+
+volumes:
+  redis_staging_data:

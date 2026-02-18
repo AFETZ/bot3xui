@@ -172,5 +172,12 @@ cython_debug/
 
 # Plans
 plans.json
+plans.staging.json
+
+# Operations runtime state
+.env.staging
+backups/
+.ops/
+app/data-staging/
 
 tmp_test/

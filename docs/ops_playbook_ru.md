@@ -193,3 +193,70 @@
 - Минимум/максимум вывода задается конфигом Telegram:
   - минимум: `1000` stars
   - максимум: `25 000 000` stars за операцию
+
+## 6) Безопасный прод-режим (staging + rollback + backups)
+
+### Что добавлено
+
+- `docker-compose.staging.yml` — отдельный staging-контур (`bot-staging` + `redis-staging`).
+- `.env.staging.example` — шаблон env для staging.
+- `scripts/backup_db.sh` — консистентный бэкап SQLite + ротация.
+- `scripts/deploy_prod.sh` — деплой в прод с автобэкапом и сохранением точки отката.
+- `scripts/rollback_prod.sh` — быстрый откат на предыдущий коммит.
+- `scripts/smoke_test_prod.sh` — базовый smoke-test после деплоя.
+- `scripts/setup_backup_cron.sh` — установка cron-задачи на регулярные бэкапы.
+
+### Первичная настройка staging
+
+1. Подготовить env:
+   - `cp .env.staging.example .env.staging`
+   - заполнить токен staging-бота и параметры подключения.
+2. Подготовить staging-планы:
+   - `cp plans.example.json plans.staging.json`
+3. Поднять staging:
+   - `docker compose --env-file .env.staging -f docker-compose.yml -f docker-compose.staging.yml up -d redis-staging bot-staging`
+4. Логи staging:
+   - `docker compose -f docker-compose.yml -f docker-compose.staging.yml logs -f bot-staging`
+
+### Релиз в прод без даунтайма для активных VPN-сессий
+
+Активные VPN-подключения обычно продолжают работать даже при перезапуске бота.
+Риск в момент релиза — покупка/продление и выдача ключей, поэтому релиз делаем через сценарий:
+
+1. Убедиться, что staging оттестирован.
+2. Выпустить тег (пример: `v0.3`) и запушить.
+3. На прод-сервере:
+   - `./scripts/deploy_prod.sh v0.3`
+4. Проверить:
+   - `./scripts/smoke_test_prod.sh`
+
+`deploy_prod.sh` автоматически:
+
+- делает бэкап БД;
+- сохраняет предыдущий коммит в `.ops/rollback_commit`;
+- пересобирает и перезапускает `bot`.
+
+### Быстрый откат
+
+Если после релиза нашли проблему:
+
+1. `./scripts/rollback_prod.sh`
+2. `./scripts/smoke_test_prod.sh`
+
+Скрипт отката:
+
+- снова делает бэкап БД;
+- переключает код на commit из `.ops/rollback_commit`;
+- перезапускает `bot`.
+
+### Автобэкап по cron
+
+Установить бэкап каждый час:
+
+- `./scripts/setup_backup_cron.sh`
+
+Или свой график:
+
+- `./scripts/setup_backup_cron.sh "*/30 * * * *"`
+
+По умолчанию хранятся бэкапы за последние `14` дней (параметр `KEEP_DAYS`).
