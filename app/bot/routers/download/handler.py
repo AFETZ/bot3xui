@@ -1,5 +1,4 @@
 import logging
-from urllib.parse import quote
 
 from aiogram import F, Router
 from aiogram.fsm.context import FSMContext
@@ -35,17 +34,11 @@ async def redirect_to_connection(request: Request) -> Response:
     params = parse_redirect_url(query_string)
     scheme = params.get("scheme")
     key = params.get("key")
-    platform = params.get("platform")
-    user_agent = request.headers.get("User-Agent", "").lower()
 
     if not scheme or not key:
         raise Response(status=400, reason="Invalid parameters.")
 
-    # Windows parser is stricter with nested URLs in deeplinks; encode the key part.
-    if platform == "windows" or (platform is None and "windows" in user_agent):
-        redirect_url = f"{scheme}{quote(key, safe='')}"
-    else:
-        redirect_url = f"{scheme}{key}"  # TODO: #namevpn
+    redirect_url = f"{scheme}{key}"  # TODO: #namevpn
     if scheme in {
         APP_IOS_SCHEME,
         APP_ANDROID_SCHEME,
