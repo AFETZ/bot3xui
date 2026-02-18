@@ -55,12 +55,6 @@ async def callback_profile(
     client_data = None
     if user.server_id:
         client_data = await services.vpn.get_client_data(user)
-        if not client_data:
-            await services.notification.show_popup(
-                callback=callback,
-                text=_("subscription:popup:error_fetching_data"),
-            )
-            return
 
     reply_markup = (
         profile_keyboard()

@@ -36,6 +36,15 @@ class VPNService:
         logger.info("VPN Service initialized.")
 
     @staticmethod
+    def _is_client_not_found_error(exception: Exception) -> bool:
+        error_text = str(exception).lower()
+        return (
+            "inbound not found for email" in error_text
+            or "not found for email" in error_text
+            or "error getting traffics" in error_text
+        )
+
+    @staticmethod
     def _resolve_client_flow(inbound: Inbound | None) -> str:
         if not inbound or not inbound.stream_settings:
             return ""
@@ -72,10 +81,14 @@ class VPNService:
 
         return client
 
-    async def get_limit_ip(self, user: User, client: Client) -> int | None:
+    async def get_limit_ip(self, user: User, client: Client | None) -> int | None:
         connection = await self.server_pool_service.get_connection(user)
 
         if not connection:
+            return None
+
+        if client is None:
+            logger.warning(f"Cannot resolve limit_ip for user {user.tg_id}: client is missing.")
             return None
 
         try:
@@ -111,6 +124,13 @@ class VPNService:
                 return None
 
             limit_ip = await self.get_limit_ip(user=user, client=client)
+            if limit_ip is None:
+                logger.warning(
+                    "Client %s exists but limit_ip was not found in inbounds.",
+                    user.tg_id,
+                )
+                return None
+
             max_devices = -1 if limit_ip == 0 else limit_ip
             traffic_total = client.total
             expiry_time = -1 if client.expiry_time == 0 else client.expiry_time
@@ -134,6 +154,12 @@ class VPNService:
             logger.debug(f"Successfully retrieved client data for {user.tg_id}: {client_data}.")
             return client_data
         except Exception as exception:
+            if self._is_client_not_found_error(exception):
+                logger.info(
+                    "Client %s not found in 3x-ui inbounds. Treating as no active subscription.",
+                    user.tg_id,
+                )
+                return None
             logger.error(f"Error retrieving client data for {user.tg_id}: {exception}")
             return None
 
@@ -226,6 +252,12 @@ class VPNService:
 
             if not replace_devices:
                 current_device_limit = await self.get_limit_ip(user=user, client=client)
+                if current_device_limit is None:
+                    logger.error(
+                        "Cannot update client %s: failed to resolve current device limit.",
+                        user.tg_id,
+                    )
+                    return False
                 devices = current_device_limit + devices
 
             current_time = get_current_timestamp()
