@@ -68,6 +68,29 @@ class PaymentGateway(ABC):
 
         async with self.session() as session:
             transaction = await Transaction.get_by_id(session=session, payment_id=payment_id)
+            if not transaction:
+                logger.warning(
+                    "Cannot process successful payment %s: transaction not found.",
+                    payment_id,
+                )
+                return
+
+            if transaction.status == TransactionStatus.COMPLETED:
+                logger.info(
+                    "Payment %s already processed (status=%s). Skipping duplicate webhook.",
+                    payment_id,
+                    transaction.status.value,
+                )
+                return
+
+            if transaction.status != TransactionStatus.PENDING:
+                logger.warning(
+                    "Payment %s has unexpected status=%s. Skipping processing.",
+                    payment_id,
+                    transaction.status.value,
+                )
+                return
+
             data = SubscriptionData.unpack(transaction.subscription)
             logger.debug(f"Subscription data unpacked: {data}")
             user = await User.get(session=session, tg_id=data.user_id)
@@ -145,6 +168,27 @@ class PaymentGateway(ABC):
         logger.info(f"Payment canceled {payment_id}")
         async with self.session() as session:
             transaction = await Transaction.get_by_id(session=session, payment_id=payment_id)
+            if not transaction:
+                logger.warning(
+                    "Cannot process canceled payment %s: transaction not found.",
+                    payment_id,
+                )
+                return
+
+            if transaction.status == TransactionStatus.CANCELED:
+                logger.info(
+                    "Payment %s already marked canceled. Skipping duplicate webhook.",
+                    payment_id,
+                )
+                return
+
+            if transaction.status == TransactionStatus.COMPLETED:
+                logger.warning(
+                    "Payment %s is already completed; cancel event ignored.",
+                    payment_id,
+                )
+                return
+
             data = SubscriptionData.unpack(transaction.subscription)
 
             await Transaction.update(
