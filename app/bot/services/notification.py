@@ -17,7 +17,7 @@ from aiogram.utils.i18n import lazy_gettext as __
 from app.bot.models.subscription_data import SubscriptionData
 from app.bot.routers.misc.keyboard import close_notification_keyboard
 from app.bot.routers.subscription.keyboard import payment_success_keyboard
-from app.bot.utils.constants import MESSAGE_EFFECT_IDS
+from app.bot.utils.constants import SUCCESS_MESSAGE_EFFECT_ID, UPGRADE_MESSAGE_EFFECT_ID
 from app.bot.utils.formatting import format_device_count, format_subscription_period
 from app.config import Config
 
@@ -164,7 +164,7 @@ class NotificationService:
         self,
         user_id: int,
         key: str,
-        message_effect_id: str = MESSAGE_EFFECT_IDS["🎉"],
+        message_effect_id: str | None = SUCCESS_MESSAGE_EFFECT_ID,
     ) -> None:
         await self.notify_by_id(
             chat_id=user_id,
@@ -177,7 +177,7 @@ class NotificationService:
         self,
         user_id: int,
         data: SubscriptionData,
-        message_effect_id: str = MESSAGE_EFFECT_IDS["🎉"],
+        message_effect_id: str | None = SUCCESS_MESSAGE_EFFECT_ID,
     ) -> None:
         await self.notify_by_id(
             chat_id=user_id,
@@ -191,13 +191,29 @@ class NotificationService:
         self,
         user_id: int,
         data: SubscriptionData,
-        message_effect_id: str = MESSAGE_EFFECT_IDS["🎉"],
+        message_effect_id: str | None = SUCCESS_MESSAGE_EFFECT_ID,
     ) -> None:
         await self.notify_by_id(
             chat_id=user_id,
             text=__("payment:message:change_success").format(
                 device=format_device_count(data.devices),
                 duration=format_subscription_period(data.duration),
+            ),
+            message_effect_id=message_effect_id,
+        )
+
+    async def notify_upgrade_success(
+        self,
+        user_id: int,
+        plan_title: str,
+        message_effect_id: str | None = UPGRADE_MESSAGE_EFFECT_ID,
+    ) -> None:
+        await self.notify_by_id(
+            chat_id=user_id,
+            text=(
+                "Оплата прошла успешно!\n\n"
+                f"Ваш тариф обновлён до {plan_title}.\n"
+                "Дополнительный профиль уже доступен в разделе подписки."
             ),
             message_effect_id=message_effect_id,
         )

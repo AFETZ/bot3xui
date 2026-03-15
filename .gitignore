@@ -171,7 +171,6 @@ cython_debug/
 *.gz
 
 # Plans
-plans.json
 plans.staging.json
 
 # Operations runtime state

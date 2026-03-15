@@ -24,7 +24,12 @@ async def initialize(
     vpn = VPNService(config=config, session=session, server_pool_service=server_pool)
     notification = NotificationService(config=config, bot=bot)
     referral = ReferralService(config=config, session_factory=session, vpn_service=vpn)
-    subscription = SubscriptionService(config=config, session_factory=session, vpn_service=vpn)
+    subscription = SubscriptionService(
+        config=config,
+        session_factory=session,
+        vpn_service=vpn,
+        plan_service=plan,
+    )
     payment_stats = PaymentStatsService(session_factory=session)
     invite_stats = InviteStatsService(session_factory=session, payment_stats_service=payment_stats)
 

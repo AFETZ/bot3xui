@@ -1,11 +1,11 @@
 import logging
 import math
 from datetime import datetime, timezone
-from decimal import ROUND_DOWN, Decimal
+from decimal import ROUND_DOWN, ROUND_HALF_UP, Decimal
 
 from aiogram.utils.i18n import gettext as _
 
-from app.bot.utils.constants import UNLIMITED
+from app.bot.utils.constants import UNLIMITED, Currency
 
 logger = logging.getLogger(__name__)
 
@@ -83,3 +83,24 @@ def to_decimal(amount: float | str | Decimal | int) -> Decimal:
         result = Decimal(str(amount))
 
     return result.quantize(Decimal(DECIMAL_FORMAT), rounding=ROUND_DOWN)
+
+
+def format_date(timestamp: int) -> str:
+    if timestamp == -1:
+        return UNLIMITED
+
+    return datetime.fromtimestamp(timestamp / 1000, timezone.utc).strftime("%d.%m.%Y")
+
+
+def normalize_price(amount: float, currency: Currency | str) -> float | int:
+    if isinstance(currency, str):
+        currency = Currency.from_code(currency)
+
+    if amount <= 0:
+        return 0
+
+    decimal_amount = Decimal(str(amount))
+    if currency in {Currency.RUB, Currency.XTR}:
+        return int(decimal_amount.quantize(Decimal("1"), rounding=ROUND_HALF_UP))
+
+    return float(decimal_amount.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP))

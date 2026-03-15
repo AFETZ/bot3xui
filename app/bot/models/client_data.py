@@ -41,6 +41,10 @@ class ClientData:
         return devices
 
     @property
+    def max_devices_count(self) -> int:
+        return self._max_devices
+
+    @property
     def traffic_total(self) -> str:
         return format_size(self._traffic_total)
 
@@ -63,6 +67,10 @@ class ClientData:
     @property
     def expiry_time(self) -> str:
         return format_remaining_time(self._expiry_time)
+
+    @property
+    def expiry_timestamp(self) -> int:
+        return self._expiry_time
 
     @property
     def has_subscription_expired(self) -> bool:

@@ -27,6 +27,7 @@ from app.bot.utils.constants import (
 )
 from app.config import DEFAULT_BOT_HOST, DEFAULT_LOCALES_DIR, Config, load_config
 from app.db.database import Database
+from app.web import setup_additional_profile_route
 
 
 async def on_shutdown(db: Database, bot: Bot, services: ServicesContainer) -> None:
@@ -158,6 +159,10 @@ async def main() -> None:
 
     # Include bot routers
     routers.include(app=app, dispatcher=dispatcher)
+    setup_additional_profile_route(
+        app=app,
+        subscription_service=services_container.subscription,
+    )
 
     # Set up bot commands
     await commands.setup(bot)

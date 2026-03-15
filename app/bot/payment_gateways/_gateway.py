@@ -24,9 +24,6 @@ from app.db.models import Transaction, User
 
 logger = logging.getLogger(__name__)
 
-from app.bot.models import SubscriptionData
-from app.bot.utils.constants import Currency
-
 
 class PaymentGateway(ABC):
     name: str
@@ -101,6 +98,14 @@ class PaymentGateway(ABC):
                 status=TransactionStatus.COMPLETED,
             )
 
+        if not user:
+            logger.error(
+                "Cannot process successful payment %s: user %s not found.",
+                payment_id,
+                data.user_id,
+            )
+            return
+
         if self.config.shop.REFERRER_REWARD_ENABLED:
             await self.services.referral.add_referrers_rewards_on_payment(
                 referred_tg_id=data.user_id,
@@ -129,34 +134,88 @@ class PaymentGateway(ABC):
                 storage=self.storage,
             )
 
-            if data.is_extend:
-                await self.services.vpn.extend_subscription(
+            resolved_plan = self.services.subscription.get_payment_plan(
+                plan_code=data.plan_code,
+                devices=data.devices,
+            )
+
+            if data.is_upgrade:
+                if not data.plan_code:
+                    logger.error(
+                        "Upgrade payment %s is missing target plan code. Skipping plan activation.",
+                        payment_id,
+                    )
+                    return
+
+                await self.services.subscription.update_current_plan(
+                    user=user,
+                    plan_code=data.plan_code,
+                    refresh_period=False,
+                )
+                logger.info(
+                    "Tariff upgrade payment succeeded for user %s. Activated plan %s.",
+                    user.tg_id,
+                    data.plan_code,
+                )
+                await self.services.notification.notify_upgrade_success(
+                    user_id=user.tg_id,
+                    plan_title=resolved_plan.title if resolved_plan else data.plan_code,
+                )
+            elif data.is_extend:
+                success = await self.services.vpn.extend_subscription(
                     user=user,
                     devices=data.devices,
                     duration=data.duration,
                 )
+                if not success:
+                    logger.error("Failed to extend subscription for user %s after payment.", user.tg_id)
+                    return
+                if resolved_plan:
+                    await self.services.subscription.update_current_plan(
+                        user=user,
+                        plan_code=resolved_plan.code,
+                        refresh_period=True,
+                    )
                 logger.info(f"Subscription extended for user {user.tg_id}")
                 await self.services.notification.notify_extend_success(
                     user_id=user.tg_id,
                     data=data,
                 )
             elif data.is_change:
-                await self.services.vpn.change_subscription(
+                success = await self.services.vpn.change_subscription(
                     user=user,
                     devices=data.devices,
                     duration=data.duration,
                 )
+                if not success:
+                    logger.error("Failed to change subscription for user %s after payment.", user.tg_id)
+                    return
+                if resolved_plan:
+                    await self.services.subscription.update_current_plan(
+                        user=user,
+                        plan_code=resolved_plan.code,
+                        refresh_period=True,
+                    )
                 logger.info(f"Subscription changed for user {user.tg_id}")
                 await self.services.notification.notify_change_success(
                     user_id=user.tg_id,
                     data=data,
                 )
             else:
-                await self.services.vpn.create_subscription(
+                success = await self.services.vpn.create_subscription(
                     user=user,
                     devices=data.devices,
                     duration=data.duration,
                 )
+                if not success:
+                    logger.error("Failed to create subscription for user %s after payment.", user.tg_id)
+                    return
+                if resolved_plan:
+                    await self.services.subscription.update_current_plan(
+                        user=user,
+                        plan_code=resolved_plan.code,
+                        refresh_period=True,
+                    )
                 logger.info(f"Subscription created for user {user.tg_id}")
                 key = await self.services.vpn.get_key(user)
                 await self.services.notification.notify_purchase_success(

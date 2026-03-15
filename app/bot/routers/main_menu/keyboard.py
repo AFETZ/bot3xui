@@ -44,6 +44,12 @@ def main_menu_keyboard(
         ),
     )
     builder.row(
+        InlineKeyboardButton(
+            text="Доп. профиль",
+            callback_data=NavSubscription.ADDITIONAL_PROFILE,
+        )
+    )
+    builder.row(
         *(
             [
                 InlineKeyboardButton(

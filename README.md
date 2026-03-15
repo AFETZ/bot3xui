@@ -118,12 +118,11 @@ Before starting the installation, make sure you have the installed [**Docker**](
    ```
 
 2. **Set up environment variables and plans:**
-- Copy `plans.example.json` to `plans.json` and `.env.example` to `.env`:
+- `plans.json` is now included in the repository by default. Copy only `.env.example` to `.env`:
     ```bash
-    cp plans.example.json plans.json
     cp .env.example .env
     ```
-    > Update `plans.json` file with your subscription plans. [(Subscription Plans Configuration)](#subscription-plans-configuration) 
+    > Update `plans.json` file with your subscription plans. [(Subscription Plans Configuration)](#subscription-plans-configuration)
 
     > Update `.env` file with your configuration. [(Environment Variables Configuration)](#environment-variables-configuration)
 

@@ -43,6 +43,9 @@ class User(Base):
     )
     first_name: Mapped[str] = mapped_column(String(length=32), nullable=False)
     username: Mapped[str | None] = mapped_column(String(length=32), nullable=True)
+    current_plan_code: Mapped[str | None] = mapped_column(String(length=32), nullable=True)
+    current_period_started_at: Mapped[datetime | None] = mapped_column(nullable=True)
+    current_period_duration_days: Mapped[int | None] = mapped_column(nullable=True)
     language_code: Mapped[str] = mapped_column(
         String(length=5),
         nullable=False,
@@ -75,8 +78,9 @@ class User(Base):
         return (
             f"<User(id={self.id}, tg_id={self.tg_id}, vpn_id='{self.vpn_id}', "
             f"server_id={self.server_id}, first_name='{self.first_name}', "
-            f"username='{self.username}', language_code='{self.language_code}', "
-            f"created_at={self.created_at}, is_trial_used={self.is_trial_used})>"
+            f"username='{self.username}', current_plan_code='{self.current_plan_code}', "
+            f"language_code='{self.language_code}', created_at={self.created_at}, "
+            f"is_trial_used={self.is_trial_used})>"
         )
 
     @classmethod
@@ -104,6 +108,27 @@ class User(Base):
     async def get_all(cls, session: AsyncSession) -> list[Self]:
         query = await session.execute(select(User).options(selectinload(User.server)))
         return query.scalars().all()
+
+    @classmethod
+    async def get_by_vpn_id(cls, session: AsyncSession, vpn_id: str) -> Self | None:
+        filter = [User.vpn_id == vpn_id]
+        query = await session.execute(
+            select(User)
+            .options(
+                selectinload(User.transactions),
+                selectinload(User.activated_promocodes),
+                selectinload(User.server),
+            )
+            .where(*filter)
+        )
+        user = query.scalar_one_or_none()
+
+        if user:
+            logger.debug("User with vpn_id %s retrieved from the database.", vpn_id)
+            return user
+
+        logger.debug("User with vpn_id %s not found in the database.", vpn_id)
+        return None
 
     @classmethod
     async def create(cls, session: AsyncSession, tg_id: int, **kwargs: Any) -> Self | None:

@@ -118,12 +118,11 @@
    ```
 
 2. **Настройка переменных окружения и планов:**
-- Скопируйте `plans.example.json` в `plans.json` и `.env.example` в `.env`:
+- `plans.json` теперь уже есть в репозитории. Скопируйте только `.env.example` в `.env`:
     ```bash
-    cp plans.example.json plans.json
     cp .env.example .env
     ```
-    > Обновите файл `plans.json` согласно вашим тарифным планам. [(Настройка планов)](#subscription-plans-configuration) 
+    > Обновите файл `plans.json` согласно вашим тарифным планам. [(Настройка планов)](#subscription-plans-configuration)
 
     > Обновите файл `.env` согласно вашей конфигурации. [(Настройка переменных окружения)](#environment-variables-configuration)
 

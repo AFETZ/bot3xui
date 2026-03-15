@@ -106,12 +106,19 @@ class VPNService:
         logger.critical(f"Client {client.email} not found in inbounds.")
         return None
 
-    async def get_client_data(self, user: User) -> ClientData | None:
+    async def _get_client_data(
+        self,
+        user: User,
+        *,
+        raise_on_error: bool,
+    ) -> ClientData | None:
         logger.debug(f"Starting to retrieve client data for {user.tg_id}.")
 
         connection = await self.server_pool_service.get_connection(user)
 
         if not connection:
+            if raise_on_error and user.server_id:
+                raise RuntimeError(f"Connection for user {user.tg_id} is unavailable.")
             return None
 
         try:
@@ -129,6 +136,10 @@ class VPNService:
                     "Client %s exists but limit_ip was not found in inbounds.",
                     user.tg_id,
                 )
+                if raise_on_error:
+                    raise RuntimeError(
+                        f"Failed to resolve device limit for user {user.tg_id}."
+                    )
                 return None
 
             max_devices = -1 if limit_ip == 0 else limit_ip
@@ -160,8 +171,15 @@ class VPNService:
                     user.tg_id,
                 )
                 return None
+            if raise_on_error:
+                raise RuntimeError(
+                    f"Failed to retrieve client data for user {user.tg_id}."
+                ) from exception
             logger.error(f"Error retrieving client data for {user.tg_id}: {exception}")
             return None
+
+    async def get_client_data(self, user: User, raise_on_error: bool = False) -> ClientData | None:
+        return await self._get_client_data(user=user, raise_on_error=raise_on_error)
 
     async def get_key(self, user: User) -> str | None:
         async with self.session() as session:

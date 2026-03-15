@@ -19,7 +19,7 @@ from app.bot.routers.misc.keyboard import (
 )
 from app.bot.utils.constants import Currency
 from app.bot.utils.formatting import format_device_count, format_subscription_period
-from app.bot.utils.navigation import NavDownload, NavMain, NavSubscription
+from app.bot.utils.navigation import NavDownload, NavMain, NavProfile, NavSubscription
 
 
 def change_subscription_button() -> InlineKeyboardButton:
@@ -29,34 +29,74 @@ def change_subscription_button() -> InlineKeyboardButton:
     )
 
 
+def upgrade_subscription_button(callback_data: SubscriptionData) -> InlineKeyboardButton:
+    callback_data.state = NavSubscription.UPGRADE
+    return InlineKeyboardButton(
+        text="Улучшить тариф",
+        callback_data=callback_data.pack(),
+    )
+
+
 def subscription_keyboard(
     has_subscription: bool,
     callback_data: SubscriptionData,
+    *,
+    show_change: bool = False,
+    show_upgrade: bool = False,
+    show_primary_profile: bool = False,
+    additional_profile_url: str | None = None,
 ) -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
 
     if not has_subscription:
-        builder.button(
-            text=_("subscription:button:buy"),
-            callback_data=callback_data,
+        builder.row(
+            InlineKeyboardButton(
+                text=_("subscription:button:buy"),
+                callback_data=callback_data.pack(),
+            )
         )
     else:
+        if show_primary_profile:
+            builder.row(
+                InlineKeyboardButton(
+                    text="Получить основную ссылку",
+                    callback_data=NavProfile.SHOW_KEY,
+                )
+            )
+
+        if additional_profile_url:
+            builder.row(
+                InlineKeyboardButton(
+                    text="Получить доп. ссылку",
+                    url=additional_profile_url,
+                )
+            )
+
         callback_data.state = NavSubscription.EXTEND
-        builder.button(
-            text=_("subscription:button:extend"),
-            callback_data=callback_data,
-        )
-        callback_data.state = NavSubscription.CHANGE
-        builder.button(
-            text=_("subscription:button:change"),
-            callback_data=callback_data,
+        builder.row(
+            InlineKeyboardButton(
+                text=_("subscription:button:extend"),
+                callback_data=callback_data.pack(),
+            )
         )
 
-    builder.button(
-        text=_("subscription:button:activate_promocode"),
-        callback_data=NavSubscription.PROMOCODE,
+        if show_upgrade:
+            builder.row(upgrade_subscription_button(callback_data))
+        elif show_change:
+            callback_data.state = NavSubscription.CHANGE
+            builder.row(
+                InlineKeyboardButton(
+                    text=_("subscription:button:change"),
+                    callback_data=callback_data.pack(),
+                )
+            )
+
+    builder.row(
+        InlineKeyboardButton(
+            text=_("subscription:button:activate_promocode"),
+            callback_data=NavSubscription.PROMOCODE,
+        )
     )
-    builder.adjust(1)
     builder.row(back_to_main_menu_button())
     return builder.as_markup()
 
@@ -69,9 +109,10 @@ def devices_keyboard(
 
     for plan in plans:
         callback_data.devices = plan.devices
+        callback_data.plan_code = plan.code
         builder.button(
             text=format_device_count(plan.devices),
-            callback_data=callback_data,
+            callback_data=callback_data.pack(),
         )
 
     builder.adjust(2)
@@ -88,15 +129,22 @@ def duration_keyboard(
     builder = InlineKeyboardBuilder()
     durations = plan_service.get_durations()
     currency: Currency = Currency.from_code(currency)
+    plan = plan_service.get_plan_by_code(callback_data.plan_code) or plan_service.get_plan(
+        callback_data.devices
+    )
+
+    if not plan:
+        builder.row(back_button(NavSubscription.MAIN))
+        builder.row(back_to_main_menu_button())
+        return builder.as_markup()
 
     for duration in durations:
         callback_data.duration = duration
         period = format_subscription_period(duration)
-        plan = plan_service.get_plan(callback_data.devices)
         price = plan.get_price(currency=currency, duration=duration)
         builder.button(
             text=f"{period} | {price} {currency.symbol}",
-            callback_data=callback_data,
+            callback_data=callback_data.pack(),
         )
 
     builder.adjust(2)
@@ -121,7 +169,11 @@ def pay_keyboard(pay_url: str, callback_data: SubscriptionData) -> InlineKeyboar
 
     builder.row(InlineKeyboardButton(text=_("subscription:button:pay"), url=pay_url))
 
-    callback_data.state = NavSubscription.DURATION
+    callback_data.state = (
+        NavSubscription.UPGRADE_PAYMENT
+        if callback_data.is_upgrade
+        else NavSubscription.DURATION
+    )
     builder.row(
         back_button(
             callback_data.pack(),
@@ -136,10 +188,14 @@ def payment_method_keyboard(
     plan: Plan,
     callback_data: SubscriptionData,
     gateways: list[PaymentGateway],
+    prices_by_callback: dict[str, float | int] | None = None,
 ) -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
     for gateway in gateways:
-        price = plan.get_price(currency=gateway.currency, duration=callback_data.duration)
+        if prices_by_callback is not None:
+            price = prices_by_callback.get(gateway.callback)
+        else:
+            price = plan.get_price(currency=gateway.currency, duration=callback_data.duration)
         if price is None:
             continue
 
@@ -151,14 +207,83 @@ def payment_method_keyboard(
             )
         )
 
-    callback_data.state = NavSubscription.DEVICES
+    if callback_data.is_upgrade:
+        callback_data.state = NavSubscription.UPGRADE
+        builder.row(back_button(callback_data.pack()))
+    else:
+        callback_data.state = NavSubscription.DEVICES
+        builder.row(
+            back_button(
+                callback_data.pack(),
+                text=_("subscription:button:change_duration"),
+            )
+        )
+
+    builder.row(back_to_main_menu_button())
+    return builder.as_markup()
+
+
+def upgrade_offer_keyboard(callback_data: SubscriptionData) -> InlineKeyboardMarkup:
+    builder = InlineKeyboardBuilder()
+    callback_data.state = NavSubscription.UPGRADE_PAYMENT
     builder.row(
-        back_button(
-            callback_data.pack(),
-            text=_("subscription:button:change_duration"),
+        InlineKeyboardButton(
+            text=_("subscription:button:pay"),
+            callback_data=callback_data.pack(),
         )
     )
+    builder.row(back_button(NavSubscription.MAIN))
+    builder.row(back_to_main_menu_button())
+    return builder.as_markup()
 
+
+def additional_profile_keyboard(
+    *,
+    additional_profile_url: str | None = None,
+    upgrade_callback_data: str | None = None,
+    test_purchase_callback: str | None = None,
+    show_primary_profile: bool = False,
+) -> InlineKeyboardMarkup:
+    builder = InlineKeyboardBuilder()
+
+    if show_primary_profile:
+        builder.row(
+            InlineKeyboardButton(
+                text="Получить основную ссылку",
+                callback_data=NavProfile.SHOW_KEY,
+            )
+        )
+
+    if additional_profile_url:
+        builder.row(
+            InlineKeyboardButton(
+                text="Получить доп. ссылку",
+                url=additional_profile_url,
+            )
+        )
+
+    if upgrade_callback_data:
+        builder.row(
+            InlineKeyboardButton(
+                text="Подключить доп. профиль",
+                callback_data=upgrade_callback_data,
+            )
+        )
+
+    if test_purchase_callback:
+        builder.row(
+            InlineKeyboardButton(
+                text="Тест: 3 месяца + доп. профиль за 1 ₽",
+                callback_data=test_purchase_callback,
+            )
+        )
+
+    builder.row(
+        InlineKeyboardButton(
+            text="Открыть подписку",
+            callback_data=NavSubscription.MAIN,
+        )
+    )
     builder.row(back_to_main_menu_button())
     return builder.as_markup()
 

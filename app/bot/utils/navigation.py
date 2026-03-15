@@ -34,8 +34,12 @@ class NavDownload(str, Enum):
 
 class NavSubscription(str, Enum):
     MAIN = "subscription"
+    ADDITIONAL_PROFILE = "additional_profile"
+    ADDITIONAL_PROFILE_TEST_PURCHASE = "additional_profile_test_purchase"
     CHANGE = "change"
     EXTEND = "extend"
+    UPGRADE = "upgrade"
+    UPGRADE_PAYMENT = "upgrade_payment"
     PROCESS = "process"
     DEVICES = "devices"
     DURATION = "duration"

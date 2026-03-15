@@ -48,13 +48,37 @@ async def callback_payment_method_selected(
         logger.info(f"User {user.tg_id} selected payment method: {method}")
         logger.info(f"User {user.tg_id} selected {devices} devices and {duration} days.")
         gateway = gateway_factory.get_gateway(method)
-        plan = services.plan.get_plan(devices)
-        price = plan.get_price(currency=gateway.currency, duration=duration)
+        plan = services.subscription.get_payment_plan(
+            plan_code=callback_data.plan_code,
+            devices=devices,
+        )
+        if not plan:
+            raise ValueError(f"Plan for payment not found. devices={devices}, code={callback_data.plan_code}")
+
+        if callback_data.is_upgrade:
+            quote = await services.subscription.get_upgrade_quote(
+                user=user,
+                currency=gateway.currency,
+            )
+            if not quote:
+                raise ValueError(f"Upgrade quote is not available for user {user.tg_id}")
+            price = quote.price
+            callback_data.duration = quote.renewal_duration_days
+            duration = callback_data.duration
+        else:
+            price = plan.get_price(currency=gateway.currency, duration=duration)
         callback_data.price = price
 
         pay_url = await gateway.create_payment(callback_data)
 
-        if callback_data.is_extend:
+        if callback_data.is_upgrade:
+            text = (
+                "Подтверждение улучшения тарифа:\n\n"
+                "Новый тариф: {plan}\n"
+                "Стоимость доплаты: {price} {currency}\n\n"
+                "Тариф обновится сразу, а текущая дата окончания не изменится."
+            )
+        elif callback_data.is_extend:
             text = _("payment:message:order_extend")
         elif callback_data.is_change:
             text = _("payment:message:order_change")
@@ -63,6 +87,7 @@ async def callback_payment_method_selected(
 
         await callback.message.edit_text(
             text=text.format(
+                plan=plan.title or devices,
                 devices=devices,
                 duration=format_subscription_period(duration),
                 price=price,
@@ -106,8 +131,9 @@ async def successful_payment(
         tg_id=user.tg_id,
         subscription=data.pack(),
         payment_id=message.successful_payment.telegram_payment_charge_id,
-        status=TransactionStatus.COMPLETED,
+        status=TransactionStatus.PENDING,
     )
 
     gateway = gateway_factory.get_gateway(NavSubscription.PAY_TELEGRAM_STARS)
-    await gateway.handle_payment_succeeded(payment_id=transaction.payment_id)
+    if transaction:
+        await gateway.handle_payment_succeeded(payment_id=transaction.payment_id)

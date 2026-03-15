@@ -72,6 +72,20 @@ class Transaction(Base):
         return query.scalars().all()
 
     @classmethod
+    async def get_latest_completed_by_user(cls, session: AsyncSession, tg_id: int) -> Self | None:
+        query = await session.execute(
+            select(Transaction)
+            .options(selectinload(Transaction.user))
+            .where(
+                Transaction.tg_id == tg_id,
+                Transaction.status == TransactionStatus.COMPLETED,
+            )
+            .order_by(Transaction.created_at.desc())
+            .limit(1)
+        )
+        return query.scalar_one_or_none()
+
+    @classmethod
     async def create(cls, session: AsyncSession, payment_id: str, **kwargs: Any) -> Self | None:
         transaction = await Transaction.get_by_id(session=session, payment_id=payment_id)
 
