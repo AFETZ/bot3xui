@@ -11,6 +11,7 @@ class NavMain(str, Enum):
 class NavProfile(str, Enum):
     MAIN = "profile"
     SHOW_KEY = "show_key"
+    SHOW_ADDITIONAL_KEY = "show_additional_key"
 
 
 class NavReferral(str, Enum):
@@ -35,7 +36,6 @@ class NavDownload(str, Enum):
 class NavSubscription(str, Enum):
     MAIN = "subscription"
     ADDITIONAL_PROFILE = "additional_profile"
-    ADDITIONAL_PROFILE_TEST_PURCHASE = "additional_profile_test_purchase"
     CHANGE = "change"
     EXTEND = "extend"
     UPGRADE = "upgrade"

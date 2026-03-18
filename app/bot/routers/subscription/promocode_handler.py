@@ -55,7 +55,7 @@ async def handle_promocode_input(
         return
 
     promocode = await Promocode.get(session=session, code=input_promocode)
-    if promocode and not promocode.is_activated:
+    if promocode and promocode.can_activate(user.tg_id):
         success = await services.vpn.activate_promocode(user=user, promocode=promocode)
         main_message_id = await state.get_value(MAIN_MESSAGE_ID_KEY)
         if success:

@@ -73,10 +73,11 @@ async def callback_payment_method_selected(
 
         if callback_data.is_upgrade:
             text = (
-                "Подтверждение улучшения тарифа:\n\n"
+                "Подключение обхода белых списков:\n\n"
                 "Новый тариф: {plan}\n"
                 "Стоимость доплаты: {price} {currency}\n\n"
-                "Тариф обновится сразу, а текущая дата окончания не изменится."
+                "Обход белых списков включится сразу после оплаты, а текущая дата окончания "
+                "подписки не изменится."
             )
         elif callback_data.is_extend:
             text = _("payment:message:order_extend")

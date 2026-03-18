@@ -1,4 +1,5 @@
 import logging
+import math
 
 from aiogram import F, Router
 from aiogram.fsm.context import FSMContext
@@ -10,6 +11,7 @@ from app.bot.models import ServicesContainer, SubscriptionData
 from app.bot.payment_gateways import GatewayFactory
 from app.bot.utils.constants import Currency
 from app.bot.utils.formatting import format_device_count, format_subscription_period
+from app.bot.utils.time import get_current_timestamp
 from app.bot.utils.navigation import NavSubscription
 from app.config import Config
 from app.db.models import User
@@ -18,7 +20,6 @@ from .keyboard import (
     additional_profile_keyboard,
     devices_keyboard,
     duration_keyboard,
-    pay_keyboard,
     payment_method_keyboard,
     subscription_keyboard,
     upgrade_offer_keyboard,
@@ -28,22 +29,23 @@ logger = logging.getLogger(__name__)
 router = Router(name=__name__)
 
 
-def _build_upgrade_offer_text(quote, currency_symbol: str) -> str:
-    return (
-        "Улучшить тариф\n\n"
-        f"Новый тариф: {quote.target_plan.title or format_device_count(quote.target_plan.devices)}\n"
-        f"Доплата за оставшийся период: {quote.price} {currency_symbol}\n"
-        f"После {quote.expiry_date} продление на {format_subscription_period(quote.renewal_duration_days)} "
-        f"будет по цене {quote.renewal_price} {currency_symbol}"
-    )
-
-
 def _get_plan_title(status) -> str:
     if status.plan and status.plan.title:
         return status.plan.title
     if status.client_data:
         return format_device_count(status.client_data.max_devices_count)
     return "-"
+
+
+def _get_remaining_period_days(status) -> int | None:
+    if not status.expiry_timestamp:
+        return None
+
+    remaining_ms = max(status.expiry_timestamp - get_current_timestamp(), 0)
+    if remaining_ms <= 0:
+        return 0
+
+    return max(1, math.ceil(remaining_ms / 86_400_000))
 
 
 def _build_subscription_text(status) -> str:
@@ -59,7 +61,7 @@ def _build_subscription_text(status) -> str:
             lines.extend(
                 [
                     "Основной профиль:",
-                    "Дополнительный профиль:",
+                    "Обход белых списков:",
                     "",
                 ]
             )
@@ -78,47 +80,48 @@ def _build_additional_profile_text(
     *,
     quote=None,
     currency_symbol: str = "",
-    show_test_purchase: bool = False,
 ) -> str:
     if status.has_additional_profile:
         return (
-            "Доп. профиль\n\n"
+            "Обход белых списков\n\n"
             "Статус: подключен\n"
             f"Текущий тариф: {_get_plan_title(status)}\n"
             f"Активна до: {status.expiry_date}\n\n"
-            "Ссылки на основной и дополнительный профили доступны ниже."
+            "Ссылки на основной профиль и профиль для обхода белых списков доступны ниже."
         )
 
     if quote:
+        remaining_days = _get_remaining_period_days(status)
+        remaining_text = (
+            format_subscription_period(remaining_days)
+            if remaining_days is not None and remaining_days > 0
+            else "-"
+        )
         return (
-            "Доп. профиль\n\n"
-            "Эта опция доступна на вашем текущем тарифе сразу после улучшения.\n"
-            f"Новый тариф: {quote.target_plan.title or format_device_count(quote.target_plan.devices)}\n"
+            "Обход белых списков\n\n"
+            "Подключается только вместе с активной основной подпиской и начинает работать сразу после оплаты.\n\n"
+            f"Текущий тариф: {_get_plan_title(status)}\n"
+            f"Активна до: {status.expiry_date}\n"
+            f"Осталось в текущем периоде: {remaining_text}\n\n"
             f"Доплата за оставшийся период: {quote.price} {currency_symbol}\n"
-            f"После {quote.expiry_date} продление на "
-            f"{format_subscription_period(quote.renewal_duration_days)} будет по цене "
-            f"{quote.renewal_price} {currency_symbol}"
+            f"Следующее продление: {quote.target_plan.title or format_device_count(quote.target_plan.devices)} "
+            f"за {quote.renewal_price} {currency_symbol} "
+            f"на {format_subscription_period(quote.renewal_duration_days)}\n\n"
+            "После оплаты дата окончания текущей подписки не изменится. При следующем продлении "
+            "бот предложит тариф уже с обходом белых списков."
         )
 
     if status.is_active:
         return (
-            "Доп. профиль\n\n"
-            "Опция доступна для активных тарифов от 3 устройств.\n"
-            "Откройте раздел подписки, чтобы выбрать подходящий тариф."
-        )
-
-    if show_test_purchase:
-        return (
-            "Доп. профиль\n\n"
-            "Для проверки доступна временная тестовая покупка:\n"
-            "3 месяца + доп. профиль через YooKassa за 1 ₽.\n\n"
-            "После оплаты сразу появятся основной и дополнительный профили."
+            "Обход белых списков\n\n"
+            "Опция доступна на тарифах с обходом белых списков.\n"
+            "Откройте раздел подписки, чтобы выбрать подходящий тариф или улучшить текущий."
         )
 
     return (
-        "Доп. профиль\n\n"
-        "Опция становится доступной после оформления активной подписки "
-        "на тариф от 3 устройств."
+        "Обход белых списков\n\n"
+        "Оформите тариф с обходом белых списков в разделе подписки, "
+        "чтобы получить основную ссылку и профиль для обхода белых списков."
     )
 
 
@@ -130,7 +133,7 @@ async def show_subscription(
     services: ServicesContainer,
 ) -> None:
     show_upgrade = services.subscription.can_upgrade_plan(status)
-    show_change = bool(status.is_active and not show_upgrade and not status.has_additional_profile)
+    show_change = status.is_active
     additional_profile_url = (
         services.subscription.get_additional_profile_url(user)
         if status.has_additional_profile
@@ -192,16 +195,14 @@ async def callback_additional_profile(
 
     upgrade_callback_data = None
     quote = None
-    show_test_purchase = bool(
-        not status.is_active and config.shop.PAYMENT_YOOKASSA_ENABLED
-    )
+    currency = Currency.from_code(config.shop.CURRENCY)
     if services.subscription.can_upgrade_plan(status):
         quote = await services.subscription.get_upgrade_quote(
             user=user,
-            currency=Currency.from_code(config.shop.CURRENCY),
+            currency=currency,
         )
         upgrade_callback_data = SubscriptionData(
-            state=NavSubscription.UPGRADE,
+            state=NavSubscription.UPGRADE_PAYMENT,
             user_id=user.tg_id,
             plan_code=status.plan.code if status.plan else "",
         ).pack()
@@ -210,67 +211,13 @@ async def callback_additional_profile(
         text=_build_additional_profile_text(
             status,
             quote=quote,
-            currency_symbol=Currency.from_code(config.shop.CURRENCY).symbol,
-            show_test_purchase=show_test_purchase,
+            currency_symbol=currency.symbol,
         ),
         reply_markup=additional_profile_keyboard(
             additional_profile_url=additional_profile_url,
             upgrade_callback_data=upgrade_callback_data,
-            test_purchase_callback=(
-                NavSubscription.ADDITIONAL_PROFILE_TEST_PURCHASE
-                if show_test_purchase
-                else None
-            ),
             show_primary_profile=status.has_additional_profile,
         ),
-    )
-
-
-@router.callback_query(F.data == NavSubscription.ADDITIONAL_PROFILE_TEST_PURCHASE)
-async def callback_additional_profile_test_purchase(
-    callback: CallbackQuery,
-    user: User,
-    services: ServicesContainer,
-    gateway_factory: GatewayFactory,
-) -> None:
-    logger.info("User %s started temporary YooKassa test purchase for additional profile.", user.tg_id)
-    status = await services.subscription.get_subscription_status(user)
-    if status.is_active:
-        await services.notification.show_popup(
-            callback=callback,
-            text="Тестовая покупка доступна только без активной подписки.",
-        )
-        return
-
-    try:
-        gateway = gateway_factory.get_gateway(NavSubscription.PAY_YOOKASSA)
-    except ValueError:
-        await services.notification.show_popup(
-            callback=callback,
-            text="YooKassa сейчас недоступна.",
-        )
-        return
-
-    callback_data = SubscriptionData(
-        state=NavSubscription.PAY_YOOKASSA,
-        user_id=user.tg_id,
-        devices=3,
-        duration=90,
-        price=1,
-        plan_code="p3a",
-    )
-    pay_url = await gateway.create_payment(callback_data)
-
-    await callback.message.edit_text(
-        text=(
-            "Тестовая покупка\n\n"
-            "Тариф: 3 устройства + доп. профиль\n"
-            "Срок: 3 месяца\n"
-            "Стоимость: 1 ₽\n"
-            "Способ оплаты: YooKassa\n\n"
-            "После успешной оплаты подписка активируется сразу."
-        ),
-        reply_markup=pay_keyboard(pay_url=pay_url, callback_data=callback_data),
     )
 
 
@@ -330,7 +277,10 @@ async def callback_subscription_change(
     callback_data.plan_code = ""
     await callback.message.edit_text(
         text=_("subscription:message:devices"),
-        reply_markup=devices_keyboard(services.plan.get_all_plans(), callback_data),
+        reply_markup=devices_keyboard(
+            services.plan.get_all_plans(prefer_additional_profile=True),
+            callback_data,
+        ),
     )
 
 
@@ -355,9 +305,12 @@ async def callback_subscription_process(
 
     callback_data.state = NavSubscription.DEVICES
     callback_data.plan_code = ""
+    purchase_plans = services.plan.get_all_plans(
+        prefer_additional_profile=not user.server_id and not user.current_plan_code,
+    )
     await callback.message.edit_text(
         text=_("subscription:message:devices"),
-        reply_markup=devices_keyboard(services.plan.get_all_plans(), callback_data),
+        reply_markup=devices_keyboard(purchase_plans, callback_data),
     )
 
 
@@ -369,9 +322,19 @@ async def callback_devices_selected(
     config: Config,
     services: ServicesContainer,
 ) -> None:
-    logger.info(f"User {user.tg_id} selected devices: {callback_data.devices}")
-    plan = services.plan.get_plan(callback_data.devices)
-    callback_data.plan_code = plan.code if plan else ""
+    logger.info(
+        "User %s selected plan candidate: devices=%s code=%s",
+        user.tg_id,
+        callback_data.devices,
+        callback_data.plan_code,
+    )
+    plan = services.subscription.get_payment_plan(
+        plan_code=callback_data.plan_code,
+        devices=callback_data.devices,
+    )
+    callback_data.plan_code = plan.code if plan else callback_data.plan_code
+    if plan:
+        callback_data.devices = plan.devices
     callback_data.state = NavSubscription.DURATION
     await callback.message.edit_text(
         text=_("subscription:message:duration"),
@@ -422,15 +385,17 @@ async def callback_subscription_upgrade(
     config: Config,
     services: ServicesContainer,
 ) -> None:
-    logger.info("User %s opened tariff upgrade offer.", user.tg_id)
+    logger.info("User %s opened whitelist bypass purchase offer.", user.tg_id)
     currency = Currency.from_code(config.shop.CURRENCY)
     quote = await services.subscription.get_upgrade_quote(user=user, currency=currency)
     if not quote:
         await services.notification.show_popup(
             callback=callback,
-            text="Улучшение тарифа сейчас недоступно.",
+            text="Подключение обхода белых списков сейчас недоступно.",
         )
         return
+
+    status = await services.subscription.get_subscription_status(user)
 
     callback_data.state = NavSubscription.UPGRADE
     callback_data.devices = quote.target_plan.devices
@@ -442,7 +407,11 @@ async def callback_subscription_upgrade(
     callback_data.is_upgrade = True
 
     await callback.message.edit_text(
-        text=_build_upgrade_offer_text(quote, currency.symbol),
+        text=_build_additional_profile_text(
+            status,
+            quote=quote,
+            currency_symbol=currency.symbol,
+        ),
         reply_markup=upgrade_offer_keyboard(callback_data),
     )
 
@@ -456,14 +425,14 @@ async def callback_subscription_upgrade_payment(
     services: ServicesContainer,
     gateway_factory: GatewayFactory,
 ) -> None:
-    logger.info("User %s selected payment screen for tariff upgrade.", user.tg_id)
+    logger.info("User %s selected payment screen for whitelist bypass purchase.", user.tg_id)
     status = await services.subscription.get_subscription_status(user)
     current_plan = status.plan
     target_plan = services.plan.get_upgrade_plan(current_plan)
     if not status.status_check_ok or not status.is_active or not current_plan or not target_plan:
         await services.notification.show_popup(
             callback=callback,
-            text="Улучшение тарифа сейчас недоступно.",
+            text="Подключение обхода белых списков сейчас недоступно.",
         )
         return
 
@@ -472,7 +441,7 @@ async def callback_subscription_upgrade_payment(
     if not display_quote:
         await services.notification.show_popup(
             callback=callback,
-            text="Улучшение тарифа сейчас недоступно.",
+            text="Подключение обхода белых списков сейчас недоступно.",
         )
         return
 
@@ -495,7 +464,11 @@ async def callback_subscription_upgrade_payment(
     callback_data.is_upgrade = True
 
     await callback.message.edit_text(
-        text=_build_upgrade_offer_text(display_quote, shop_currency.symbol),
+        text=_build_additional_profile_text(
+            status,
+            quote=display_quote,
+            currency_symbol=shop_currency.symbol,
+        ),
         reply_markup=payment_method_keyboard(
             plan=target_plan,
             callback_data=callback_data,

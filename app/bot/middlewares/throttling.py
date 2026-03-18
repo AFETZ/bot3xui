@@ -47,7 +47,7 @@ class ThrottlingMiddleware(BaseMiddleware):
             logger.debug("Successful payment event, skipping throttling.")
             return await handler(event, data)
 
-        user: TelegramUser | None = event.event.from_user
+        user: TelegramUser | None = getattr(event.event, "from_user", None)
 
         if user is not None:
             key = get_flag(handler=data, name="throttling_key", default=self.default_key)

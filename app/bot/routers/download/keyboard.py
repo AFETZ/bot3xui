@@ -16,6 +16,11 @@ from app.bot.utils.constants import (
 from app.bot.utils.navigation import NavDownload, NavMain, NavSubscription, NavSupport
 
 
+def build_connect_url(url: str, scheme: str, key: str, platform_param: str) -> str:
+    connect_params = urlencode({"scheme": scheme, "key": key, "platform": platform_param})
+    return f"{url}{CONNECTION_WEBHOOK}?{connect_params}"
+
+
 def platforms_keyboard(previous_callback: str = None) -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
 
@@ -43,7 +48,12 @@ def platforms_keyboard(previous_callback: str = None) -> InlineKeyboardMarkup:
     return builder.as_markup()
 
 
-def download_keyboard(platform: NavDownload, url: str, key: str) -> InlineKeyboardMarkup:
+def download_keyboard(
+    platform: NavDownload,
+    url: str,
+    key: str | None,
+    additional_profile_key: str | None = None,
+) -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
 
     match platform:
@@ -60,15 +70,37 @@ def download_keyboard(platform: NavDownload, url: str, key: str) -> InlineKeyboa
             download = APP_WINDOWS_LINK
             platform_param = "windows"
 
-    connect_params = urlencode({"scheme": scheme, "key": key, "platform": platform_param})
-    connect = f"{url}{CONNECTION_WEBHOOK}?{connect_params}"
+    connect = build_connect_url(url=url, scheme=scheme, key=key, platform_param=platform_param) if key else None
+    additional_connect = (
+        build_connect_url(
+            url=url,
+            scheme=scheme,
+            key=additional_profile_key,
+            platform_param=platform_param,
+        )
+        if additional_profile_key
+        else None
+    )
 
-    builder.button(text=_("download:button:download"), url=download)
-
-    builder.button(
-        text=_("download:button:connect"),
-        url=connect if key else None,
-        callback_data=NavSubscription.MAIN if not key else None,
+    builder.row(
+        InlineKeyboardButton(
+            text=_("download:button:connect_primary_profile"),
+            url=connect if key else None,
+            callback_data=NavSubscription.MAIN if not key else None,
+        )
+    )
+    builder.row(
+        InlineKeyboardButton(
+            text=_("download:button:connect_additional_profile"),
+            url=additional_connect if additional_profile_key else None,
+            callback_data=NavSubscription.ADDITIONAL_PROFILE if not additional_profile_key else None,
+        )
+    )
+    builder.row(
+        InlineKeyboardButton(
+            text=_("download:button:download"),
+            url=download,
+        )
     )
 
     builder.row(back_button(NavDownload.MAIN))

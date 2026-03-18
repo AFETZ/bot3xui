@@ -12,6 +12,7 @@ from app.db.models import Server
 from app.db.models.invite import Invite
 
 PROMOCODE_CUSTOM_DURATION_CALLBACK = "promocode_custom_duration"
+PROMOCODE_CUSTOM_ACTIVATIONS_CALLBACK = "promocode_custom_activations"
 
 
 def admin_tools_keyboard(is_dev: bool) -> InlineKeyboardMarkup:
@@ -133,6 +134,35 @@ def promocode_duration_keyboard() -> InlineKeyboardMarkup:
         )
     )
     builder.row(back_button(NavAdminTools.PROMOCODE_EDITOR))
+    return builder.as_markup()
+
+
+def promocode_activations_keyboard() -> InlineKeyboardMarkup:
+    builder = InlineKeyboardBuilder()
+    options = [1, 10, 25, 50, 100, 0]
+
+    for count in options:
+        if count == 0:
+            label = _("promocode_editor:button:unlimited")
+        elif count == 1:
+            label = _("promocode_editor:button:single_use")
+        else:
+            label = f"{count}"
+        builder.add(
+            InlineKeyboardButton(
+                text=label,
+                callback_data=f"promo_act_{count}",
+            )
+        )
+
+    builder.adjust(3)
+    builder.row(
+        InlineKeyboardButton(
+            text=_("promocode_editor:button:manual_activations"),
+            callback_data=PROMOCODE_CUSTOM_ACTIVATIONS_CALLBACK,
+        )
+    )
+    builder.row(back_button(NavAdminTools.CREATE_PROMOCODE))
     return builder.as_markup()
 
 

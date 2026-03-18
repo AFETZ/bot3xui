@@ -29,6 +29,7 @@ msgstr ""
 "\n"
 "Payment ID: <tg-spoiler><code>{payment_id}</code></tg-spoiler>\n"
 "User ID: <code>{user_id}</code>\n"
+"Plan: <code>{plan}</code>\n"
 "<code>{devices}</code> | <code>{duration}</code>"
 
 #: app/bot/payment_gateways/_gateway.py:159
@@ -520,6 +521,36 @@ msgstr ""
 "<pre>{promocode}</pre>\n"
 "<i>Duration: {duration}</i>"
 
+msgid "promocode_editor:ntf:created_success_multi"
+msgstr ""
+"✅ <i>Created promocode:</i>\n"
+"<pre>{promocode}</pre>\n"
+"<i>Duration: {duration}</i>\n"
+"<i>Max activations: {max_activations}</i>"
+
+msgid "promocode_editor:message:select_activations"
+msgstr ""
+"🎟️ <b>Max activations:</b>\n"
+"\n"
+"<i>How many users can activate this promocode?</i>"
+
+msgid "promocode_editor:message:enter_activations"
+msgstr ""
+"🎟️ <b>Enter max activations:</b>\n"
+"<i>{min_val}–{max_val}</i>"
+
+msgid "promocode_editor:ntf:activations_invalid"
+msgstr "❌ <i>Must be {min_val}–{max_val}.</i>"
+
+msgid "promocode_editor:button:single_use"
+msgstr "1️⃣ Single"
+
+msgid "promocode_editor:button:unlimited"
+msgstr "♾ Unlimited"
+
+msgid "promocode_editor:button:manual_activations"
+msgstr "✍️ Enter manually"
+
 #: app/bot/routers/admin_tools/promocode_handler.py:88
 msgid "promocode_editor:ntf:create_failed"
 msgstr "❌ <i>Failed to create promocode.</i>"
@@ -726,6 +757,14 @@ msgid "download:button:download"
 msgstr "📥 Download"
 
 #: app/bot/routers/download/keyboard.py:64
+msgid "download:button:connect_primary_profile"
+msgstr "🔌 Connect main profile"
+
+#: app/bot/routers/download/keyboard.py:71
+msgid "download:button:connect_additional_profile"
+msgstr "🌐 Connect whitelist bypass"
+
+#: app/bot/routers/download/keyboard.py:78
 msgid "download:button:connect"
 msgstr "🔌 Connect"
 
@@ -743,6 +782,7 @@ msgstr ""
 "🔒 Traffic privacy and security\n"
 "📱 iOS / Android / Windows\n"
 "🌍 Works where internet access is restricted\n"
+"🌐 Whitelist bypass is available on selected plans and is provided as is, without guarantees\n"
 "💳 Payment and renewal in a few clicks\n"
 "\n"
 "Choose an action below to get started."
@@ -862,8 +902,16 @@ msgid "profile:button:show_key"
 msgstr "🔑 Show key"
 
 #: app/bot/routers/profile/keyboard.py:34
+msgid "profile:button:show_additional_key"
+msgstr "🌐 Show whitelist bypass key"
+
+#: app/bot/routers/profile/keyboard.py:40
 msgid "profile:button:connect"
 msgstr "🔌 Connect"
+
+#: app/bot/routers/profile/handler.py:91
+msgid "profile:popup:additional_key_unavailable"
+msgstr "Whitelist bypass is not available on your plan."
 
 #: app/bot/routers/referral/handler.py:35
 msgid "referral:message:user_summary"
@@ -1085,7 +1133,7 @@ msgstr "⏳ <b>Specify the duration:</b>"
 #: app/bot/routers/subscription/subscription_handler.py:119
 #: app/bot/routers/subscription/subscription_handler.py:145
 msgid "subscription:message:devices"
-msgstr "📱 <b>Select the number of devices:</b>"
+msgstr "📱 <b>Select a plan:</b>"
 
 #: app/bot/routers/subscription/subscription_handler.py:138
 #: app/bot/routers/subscription/trial_handler.py:35

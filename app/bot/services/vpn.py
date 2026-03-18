@@ -365,7 +365,7 @@ class VPNService:
             return True
 
         async with self.session() as session:
-            await Promocode.set_deactivated(session=session, code=promocode.code)
+            await Promocode.set_deactivated(session=session, code=promocode.code, user_id=user.tg_id)
 
         logger.warning(f"Promocode {promocode.code} not activated due to failure.")
         return False

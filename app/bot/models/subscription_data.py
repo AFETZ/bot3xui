@@ -1,8 +1,6 @@
 from enum import Enum
 
 from aiogram.filters.callback_data import MAX_CALLBACK_LENGTH, CallbackData
-from aiogram.filters.callback_data import CallbackDataException
-
 from app.bot.utils.navigation import NavSubscription
 
 
@@ -65,7 +63,7 @@ class SubscriptionData(CallbackData, prefix="subscription"):
         names = list(cls.model_fields.keys())
 
         if prefix != cls.__prefix__:
-            raise CallbackDataException(
+            raise ValueError(
                 f"Bad prefix ({prefix!r} != {cls.__prefix__!r})"
             )
 
