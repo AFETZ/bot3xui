@@ -186,6 +186,56 @@ class SubscriptionService:
     def get_payment_plan(self, plan_code: str | None, devices: int) -> Plan | None:
         return self.plan_service.get_plan_by_code(plan_code) or self.plan_service.get_plan(devices)
 
+    def _get_supported_plan_durations(self, *plans: Plan) -> list[int]:
+        durations: set[int] = set()
+        default_durations = self.plan_service.get_durations()
+
+        for plan in plans:
+            durations.update(plan.get_available_durations(default_durations))
+
+        return sorted(durations)
+
+    async def _resolve_upgrade_duration_days(
+        self,
+        *,
+        user: User,
+        current_plan: Plan,
+        target_plan: Plan,
+        requested_duration_days: int | None,
+    ) -> int:
+        supported_durations = self._get_supported_plan_durations(current_plan, target_plan)
+        if not supported_durations:
+            return self._get_default_duration_days()
+
+        if requested_duration_days in supported_durations:
+            return requested_duration_days
+
+        fallback_duration_days = await self._get_fallback_period_duration_days(user)
+        if fallback_duration_days in supported_durations:
+            logger.info(
+                "Resolved unsupported upgrade duration for user %s via latest transaction: requested=%s resolved=%s",
+                user.tg_id,
+                requested_duration_days,
+                fallback_duration_days,
+            )
+            return fallback_duration_days
+
+        reference_duration = requested_duration_days or fallback_duration_days
+        if reference_duration:
+            resolved_duration = min(
+                supported_durations,
+                key=lambda duration: (abs(duration - reference_duration), duration),
+            )
+            logger.info(
+                "Resolved unsupported upgrade duration for user %s via nearest plan duration: requested=%s resolved=%s",
+                user.tg_id,
+                requested_duration_days,
+                resolved_duration,
+            )
+            return resolved_duration
+
+        return supported_durations[0]
+
     def calculate_upgrade_price(
         self,
         current_plan: Plan,
@@ -204,6 +254,7 @@ class SubscriptionService:
             upgrade_price = target_price
         else:
             upgrade_price = price_difference * remaining_seconds / full_period_seconds
+            upgrade_price = min(upgrade_price, price_difference)
 
         normalized_price = normalize_price(upgrade_price, currency)
         logger.info(
@@ -236,7 +287,12 @@ class SubscriptionService:
         if status.expiry_timestamp is None:
             return None
 
-        duration_days = status.period_duration_days or self._get_default_duration_days()
+        duration_days = await self._resolve_upgrade_duration_days(
+            user=user,
+            current_plan=status.plan,
+            target_plan=target_plan,
+            requested_duration_days=status.period_duration_days,
+        )
         remaining_seconds = max((status.expiry_timestamp - get_current_timestamp()) / 1000, 0)
         price = self.calculate_upgrade_price(
             current_plan=status.plan,
@@ -265,6 +321,7 @@ class SubscriptionService:
         plan_code: str,
         *,
         refresh_period: bool,
+        period_duration_days: int | None = None,
     ) -> None:
         updates: dict[str, object] = {"current_plan_code": plan_code}
 
@@ -283,11 +340,17 @@ class SubscriptionService:
                 client_data = None
 
             if client_data and client_data.expiry_timestamp != -1:
-                remaining_ms = max(client_data.expiry_timestamp - get_current_timestamp(), 0)
                 updates["current_period_started_at"] = datetime.now(timezone.utc)
-                updates["current_period_duration_days"] = max(
-                    1,
-                    math.ceil(remaining_ms / 86_400_000),
+                updates["current_period_duration_days"] = (
+                    period_duration_days
+                    if period_duration_days is not None
+                    else max(
+                        1,
+                        math.ceil(
+                            max(client_data.expiry_timestamp - get_current_timestamp(), 0)
+                            / 86_400_000
+                        ),
+                    )
                 )
             else:
                 updates["current_period_started_at"] = None
@@ -330,12 +393,15 @@ class SubscriptionService:
             logger.critical(f"Failed to activate trial for user {user.tg_id}.")
             return False
 
+        trial_devices = self.config.shop.TRIAL_DEVICES_COUNT
+        trial_plan_code = self.config.shop.TRIAL_PLAN_CODE
+
         logger.info(f"Begun giving trial period for user {user.tg_id}.")
         try:
             trial_success = await self.vpn_service.process_bonus_days(
                 user,
                 duration=self.config.shop.TRIAL_PERIOD,
-                devices=self.config.shop.BONUS_DEVICES_COUNT,
+                devices=trial_devices,
             )
         except Exception as exception:
             logger.exception(
@@ -346,6 +412,13 @@ class SubscriptionService:
             return False
 
         if trial_success:
+            if trial_plan_code:
+                await self.update_current_plan(
+                    user=user,
+                    plan_code=trial_plan_code,
+                    refresh_period=True,
+                    period_duration_days=self.config.shop.TRIAL_PERIOD,
+                )
             logger.info(
                 f"Successfully gave {self.config.shop.TRIAL_PERIOD} days to a user {user.tg_id}"
             )

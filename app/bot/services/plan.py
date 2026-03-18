@@ -86,8 +86,19 @@ class PlanService:
             None,
         )
 
-    def get_all_plans(self) -> list[Plan]:
-        return [plan for plan in self._plans if plan.is_public]
+    def get_all_plans(self, *, prefer_additional_profile: bool = False) -> list[Plan]:
+        public_plans = [plan for plan in self._plans if plan.is_public]
+        if not prefer_additional_profile:
+            return public_plans
+
+        return sorted(
+            public_plans,
+            key=lambda plan: (
+                plan.devices,
+                0 if plan.includes_additional_profile else 1,
+                plan.code,
+            ),
+        )
 
     def get_durations(self) -> list[int]:
         return self._durations

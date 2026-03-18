@@ -113,12 +113,19 @@ class PaymentGateway(ABC):
                 payment_id=payment_id,
             )
 
+        resolved_plan_for_notify = self.services.subscription.get_payment_plan(
+            plan_code=data.plan_code,
+            devices=data.devices,
+        )
+        plan_label = resolved_plan_for_notify.title if resolved_plan_for_notify and resolved_plan_for_notify.title else ""
+
         await self.services.notification.notify_developer(
             text=EVENT_PAYMENT_SUCCEEDED_TAG
             + "\n\n"
             + _("payment:event:payment_succeeded").format(
                 payment_id=payment_id,
                 user_id=user.tg_id,
+                plan=plan_label,
                 devices=format_device_count(data.devices),
                 duration=format_subscription_period(data.duration),
             ),
@@ -175,6 +182,7 @@ class PaymentGateway(ABC):
                         user=user,
                         plan_code=resolved_plan.code,
                         refresh_period=True,
+                        period_duration_days=data.duration,
                     )
                 logger.info(f"Subscription extended for user {user.tg_id}")
                 await self.services.notification.notify_extend_success(
@@ -195,6 +203,7 @@ class PaymentGateway(ABC):
                         user=user,
                         plan_code=resolved_plan.code,
                         refresh_period=True,
+                        period_duration_days=data.duration,
                     )
                 logger.info(f"Subscription changed for user {user.tg_id}")
                 await self.services.notification.notify_change_success(
@@ -215,6 +224,7 @@ class PaymentGateway(ABC):
                         user=user,
                         plan_code=resolved_plan.code,
                         refresh_period=True,
+                        period_duration_days=data.duration,
                     )
                 logger.info(f"Subscription created for user {user.tg_id}")
                 key = await self.services.vpn.get_key(user)

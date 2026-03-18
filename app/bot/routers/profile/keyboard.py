@@ -20,7 +20,7 @@ def buy_subscription_keyboard() -> InlineKeyboardMarkup:
     return builder.as_markup()
 
 
-def profile_keyboard() -> InlineKeyboardMarkup:
+def profile_keyboard(*, show_additional_profile_key: bool = False) -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
 
     builder.row(
@@ -29,6 +29,13 @@ def profile_keyboard() -> InlineKeyboardMarkup:
             callback_data=NavProfile.SHOW_KEY,
         )
     )
+    if show_additional_profile_key:
+        builder.row(
+            InlineKeyboardButton(
+                text=_("profile:button:show_additional_key"),
+                callback_data=NavProfile.SHOW_ADDITIONAL_KEY,
+            )
+        )
     builder.row(
         InlineKeyboardButton(
             text=_("profile:button:connect"),

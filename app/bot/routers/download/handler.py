@@ -86,6 +86,12 @@ async def callback_platform(
 ) -> None:
     logger.info(f"User {user.tg_id} selected platform: {callback.data}")
     key = await services.vpn.get_key(user)
+    status = await services.subscription.get_subscription_status(user)
+    additional_profile_key = (
+        services.subscription.get_additional_profile_url(user)
+        if status.status_check_ok and status.has_additional_profile
+        else None
+    )
 
     match callback.data:
         case NavDownload.PLATFORM_IOS:
@@ -97,5 +103,10 @@ async def callback_platform(
 
     await callback.message.edit_text(
         text=_("download:message:connect_to_vpn").format(platform=platform),
-        reply_markup=download_keyboard(platform=callback.data, key=key, url=config.bot.DOMAIN),
+        reply_markup=download_keyboard(
+            platform=callback.data,
+            key=key,
+            url=config.bot.DOMAIN,
+            additional_profile_key=additional_profile_key,
+        ),
     )

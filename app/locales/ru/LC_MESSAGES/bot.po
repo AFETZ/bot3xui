@@ -32,6 +32,7 @@ msgstr ""
 "\n"
 "ID платежа: <blockquote><code>{payment_id}</code></blockquote>\n"
 "ID пользователя: <code>{user_id}</code>\n"
+"Тариф: <code>{plan}</code>\n"
 "<code>{devices}</code> | <code>{duration}</code>"
 
 #: app/bot/payment_gateways/_gateway.py:159
@@ -527,6 +528,36 @@ msgstr ""
 "<pre>{promocode}</pre>\n"
 "<i>Длительность: {duration}</i>"
 
+msgid "promocode_editor:ntf:created_success_multi"
+msgstr ""
+"✅ <i>Созданный промокод:</i>\n"
+"<pre>{promocode}</pre>\n"
+"<i>Длительность: {duration}</i>\n"
+"<i>Макс. активаций: {max_activations}</i>"
+
+msgid "promocode_editor:message:select_activations"
+msgstr ""
+"🎟️ <b>Количество активаций:</b>\n"
+"\n"
+"<i>Сколько пользователей смогут активировать этот промокод?</i>"
+
+msgid "promocode_editor:message:enter_activations"
+msgstr ""
+"🎟️ <b>Введите макс. количество активаций:</b>\n"
+"<i>{min_val}–{max_val}</i>"
+
+msgid "promocode_editor:ntf:activations_invalid"
+msgstr "❌ <i>Должно быть {min_val}–{max_val}.</i>"
+
+msgid "promocode_editor:button:single_use"
+msgstr "1️⃣ Одноразовый"
+
+msgid "promocode_editor:button:unlimited"
+msgstr "♾ Безлимитный"
+
+msgid "promocode_editor:button:manual_activations"
+msgstr "✍️ Ввести вручную"
+
 #: app/bot/routers/admin_tools/promocode_handler.py:88
 msgid "promocode_editor:ntf:create_failed"
 msgstr "❌ <i>Не удалось создать промокод.</i>"
@@ -734,6 +765,14 @@ msgid "download:button:download"
 msgstr "📥 Скачать"
 
 #: app/bot/routers/download/keyboard.py:64
+msgid "download:button:connect_primary_profile"
+msgstr "🔌 Подключить основной профиль"
+
+#: app/bot/routers/download/keyboard.py:71
+msgid "download:button:connect_additional_profile"
+msgstr "🌐 Подключить обход белых списков"
+
+#: app/bot/routers/download/keyboard.py:78
 msgid "download:button:connect"
 msgstr "🔌 Подключиться"
 
@@ -751,6 +790,7 @@ msgstr ""
 "🔒 Защита и приватность трафика\n"
 "📱 iOS / Android / Windows\n"
 "🌍 Работает там, где доступ к сайтам ограничен\n"
+"🌐 Обход белых списков доступен на части тарифов и предоставляется as is, без гарантий\n"
 "💳 Оплата и продление в пару кликов\n"
 "\n"
 "Выберите действие ниже, чтобы начать."
@@ -871,8 +911,16 @@ msgid "profile:button:show_key"
 msgstr "🔑 Показать ключ"
 
 #: app/bot/routers/profile/keyboard.py:34
+msgid "profile:button:show_additional_key"
+msgstr "🌐 Показать ключ обхода белых списков"
+
+#: app/bot/routers/profile/keyboard.py:40
 msgid "profile:button:connect"
 msgstr "🔌 Подключиться"
+
+#: app/bot/routers/profile/handler.py:91
+msgid "profile:popup:additional_key_unavailable"
+msgstr "Обход белых списков недоступен на вашем тарифе."
 
 #: app/bot/routers/referral/handler.py:35
 msgid "referral:message:user_summary"
@@ -1097,7 +1145,7 @@ msgstr "⏳ <b>Выберите длительность:</b>"
 #: app/bot/routers/subscription/subscription_handler.py:119
 #: app/bot/routers/subscription/subscription_handler.py:145
 msgid "subscription:message:devices"
-msgstr "📱 <b>Выберите количество устройств:</b>"
+msgstr "📱 <b>Выберите тариф:</b>"
 
 #: app/bot/routers/subscription/subscription_handler.py:138
 #: app/bot/routers/subscription/trial_handler.py:35

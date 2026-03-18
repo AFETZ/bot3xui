@@ -42,6 +42,17 @@ async def prepare_message(user: User, client_data: ClientData | None) -> str:
     return profile + subscription + statistics
 
 
+async def show_temporary_key(callback: CallbackQuery, key: str) -> None:
+    key_text = _("profile:message:key")
+    message = await callback.message.answer(key_text.format(key=key, seconds_text=_("10 seconds")))
+
+    for seconds in range(9, 0, -1):
+        seconds_text = _("1 second", "{} seconds", seconds).format(seconds)
+        await asyncio.sleep(1)
+        await message.edit_text(text=key_text.format(key=key, seconds_text=seconds_text))
+    await message.delete()
+
+
 @router.callback_query(F.data == NavProfile.MAIN)
 async def callback_profile(
     callback: CallbackQuery,
@@ -52,12 +63,12 @@ async def callback_profile(
     logger.info(f"User {user.tg_id} opened profile page.")
     await state.update_data({PREVIOUS_CALLBACK_KEY: NavProfile.MAIN})
 
-    client_data = None
-    if user.server_id:
-        client_data = await services.vpn.get_client_data(user)
+    status = await services.subscription.get_subscription_status(user)
+    client_data = status.client_data
+    has_additional_profile = bool(status.status_check_ok and status.has_additional_profile)
 
     reply_markup = (
-        profile_keyboard()
+        profile_keyboard(show_additional_profile_key=has_additional_profile)
         if client_data and not client_data.has_subscription_expired
         else buy_subscription_keyboard()
     )
@@ -75,11 +86,19 @@ async def callback_show_key(
 ) -> None:
     logger.info(f"User {user.tg_id} looked key.")
     key = await services.vpn.get_key(user)
-    key_text = _("profile:message:key")
-    message = await callback.message.answer(key_text.format(key=key, seconds_text=_("10 seconds")))
+    await show_temporary_key(callback=callback, key=key)
 
-    for seconds in range(9, 0, -1):
-        seconds_text = _("1 second", "{} seconds", seconds).format(seconds)
-        await asyncio.sleep(1)
-        await message.edit_text(text=key_text.format(key=key, seconds_text=seconds_text))
-    await message.delete()
+
+@router.callback_query(F.data == NavProfile.SHOW_ADDITIONAL_KEY)
+async def callback_show_additional_key(
+    callback: CallbackQuery,
+    user: User,
+    services: ServicesContainer,
+) -> None:
+    logger.info("User %s looked whitelist bypass key.", user.tg_id)
+    if not await services.subscription.has_additional_profile_access(user):
+        await callback.answer(_("profile:popup:additional_key_unavailable"), show_alert=True)
+        return
+
+    key = services.subscription.get_additional_profile_url(user)
+    await show_temporary_key(callback=callback, key=key)

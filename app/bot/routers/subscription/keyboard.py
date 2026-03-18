@@ -29,11 +29,10 @@ def change_subscription_button() -> InlineKeyboardButton:
     )
 
 
-def upgrade_subscription_button(callback_data: SubscriptionData) -> InlineKeyboardButton:
-    callback_data.state = NavSubscription.UPGRADE
+def upgrade_subscription_button() -> InlineKeyboardButton:
     return InlineKeyboardButton(
-        text="Улучшить тариф",
-        callback_data=callback_data.pack(),
+        text="Подключить обход белых списков",
+        callback_data=NavSubscription.ADDITIONAL_PROFILE,
     )
 
 
@@ -67,7 +66,7 @@ def subscription_keyboard(
         if additional_profile_url:
             builder.row(
                 InlineKeyboardButton(
-                    text="Получить доп. ссылку",
+                    text="Получить ссылку обхода белых списков",
                     url=additional_profile_url,
                 )
             )
@@ -80,9 +79,7 @@ def subscription_keyboard(
             )
         )
 
-        if show_upgrade:
-            builder.row(upgrade_subscription_button(callback_data))
-        elif show_change:
+        if show_change:
             callback_data.state = NavSubscription.CHANGE
             builder.row(
                 InlineKeyboardButton(
@@ -90,6 +87,9 @@ def subscription_keyboard(
                     callback_data=callback_data.pack(),
                 )
             )
+
+        if show_upgrade:
+            builder.row(upgrade_subscription_button())
 
     builder.row(
         InlineKeyboardButton(
@@ -111,7 +111,7 @@ def devices_keyboard(
         callback_data.devices = plan.devices
         callback_data.plan_code = plan.code
         builder.button(
-            text=format_device_count(plan.devices),
+            text=plan.title or format_device_count(plan.devices),
             callback_data=callback_data.pack(),
         )
 
@@ -127,7 +127,6 @@ def duration_keyboard(
     currency: str,
 ) -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
-    durations = plan_service.get_durations()
     currency: Currency = Currency.from_code(currency)
     plan = plan_service.get_plan_by_code(callback_data.plan_code) or plan_service.get_plan(
         callback_data.devices
@@ -138,12 +137,16 @@ def duration_keyboard(
         builder.row(back_to_main_menu_button())
         return builder.as_markup()
 
+    durations = plan.get_available_durations(plan_service.get_durations())
+
     for duration in durations:
         callback_data.duration = duration
         period = format_subscription_period(duration)
         price = plan.get_price(currency=currency, duration=duration)
+        discount_percent = plan.get_discount_percent(currency=currency, duration=duration)
+        discount_suffix = f" | -{discount_percent}%" if discount_percent > 0 else ""
         builder.button(
-            text=f"{period} | {price} {currency.symbol}",
+            text=f"{period} | {price} {currency.symbol}{discount_suffix}",
             callback_data=callback_data.pack(),
         )
 
@@ -208,8 +211,7 @@ def payment_method_keyboard(
         )
 
     if callback_data.is_upgrade:
-        callback_data.state = NavSubscription.UPGRADE
-        builder.row(back_button(callback_data.pack()))
+        builder.row(back_button(NavSubscription.ADDITIONAL_PROFILE))
     else:
         callback_data.state = NavSubscription.DEVICES
         builder.row(
@@ -232,7 +234,7 @@ def upgrade_offer_keyboard(callback_data: SubscriptionData) -> InlineKeyboardMar
             callback_data=callback_data.pack(),
         )
     )
-    builder.row(back_button(NavSubscription.MAIN))
+    builder.row(back_button(NavSubscription.ADDITIONAL_PROFILE))
     builder.row(back_to_main_menu_button())
     return builder.as_markup()
 
@@ -241,7 +243,6 @@ def additional_profile_keyboard(
     *,
     additional_profile_url: str | None = None,
     upgrade_callback_data: str | None = None,
-    test_purchase_callback: str | None = None,
     show_primary_profile: bool = False,
 ) -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
@@ -257,7 +258,7 @@ def additional_profile_keyboard(
     if additional_profile_url:
         builder.row(
             InlineKeyboardButton(
-                text="Получить доп. ссылку",
+                text="Получить ссылку обхода белых списков",
                 url=additional_profile_url,
             )
         )
@@ -265,16 +266,8 @@ def additional_profile_keyboard(
     if upgrade_callback_data:
         builder.row(
             InlineKeyboardButton(
-                text="Подключить доп. профиль",
+                text="Подключить обход белых списков",
                 callback_data=upgrade_callback_data,
-            )
-        )
-
-    if test_purchase_callback:
-        builder.row(
-            InlineKeyboardButton(
-                text="Тест: 3 месяца + доп. профиль за 1 ₽",
-                callback_data=test_purchase_callback,
             )
         )
 
