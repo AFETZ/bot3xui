@@ -69,7 +69,16 @@ class NavAdminTools(str, Enum):
     EDIT_SERVER = "edit_server"
     SYNC_SERVERS = "sync_servers"
     STATISTICS = "statistics"
+
     USER_EDITOR = "user_editor"
+    USER_LIST = "user_list"
+    USER_LIST_PAGE = "user_list_page"
+    USER_SEARCH = "user_search"
+    USER_DETAILS = "user_details"
+    USER_SEND_MESSAGE = "user_send_message"
+    USER_ACTIVE_FILTER = "user_filter_active"
+    USER_INACTIVE_FILTER = "user_filter_inactive"
+    USER_ALL_FILTER = "user_filter_all"
 
     INVITE_EDITOR = "invite_editor"
     CREATE_INVITE = "create_invite"

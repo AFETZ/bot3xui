@@ -721,6 +721,153 @@ msgstr "❌ Не удалось удалить сервер."
 msgid "global:popup:development"
 msgstr "В разработке!"
 
+#: app/bot/routers/admin_tools/user_handler.py
+msgid "user_editor:message:main"
+msgstr "👤 <b>Управление пользователями:</b>"
+
+msgid "user_editor:button:list_users"
+msgstr "📋 Список пользователей"
+
+msgid "user_editor:button:search"
+msgstr "🔍 Поиск пользователя"
+
+msgid "user_editor:button:active_users"
+msgstr "✅ Активные"
+
+msgid "user_editor:button:inactive_users"
+msgstr "❌ Без подписки"
+
+msgid "user_editor:button:prev_page"
+msgstr "◀️ Назад"
+
+msgid "user_editor:button:next_page"
+msgstr "▶️ Далее"
+
+msgid "user_editor:button:send_message"
+msgstr "✉️ Написать пользователю"
+
+msgid "user_editor:button:open_in_tg"
+msgstr "💬 Открыть в Telegram"
+
+msgid "user_editor:button:back_to_editor"
+msgstr "◀️ К управлению пользователями"
+
+msgid "user_editor:message:no_users"
+msgstr "<i>Пользователи не найдены.</i>"
+
+msgid "user_editor:message:list"
+msgstr ""
+"👤 <b>Пользователи ({filter}):</b>\n"
+"Всего: {total}\n"
+"\n"
+"<i>[+] — есть подписка, [—] — нет подписки</i>"
+
+msgid "user_editor:message:search"
+msgstr ""
+"🔍 <b>Поиск пользователя:</b>\n"
+"\n"
+"<i>Введите Telegram ID, username или имя для поиска</i>"
+
+msgid "user_editor:message:search_results"
+msgstr ""
+"🔍 <b>Результаты поиска «{query}»:</b>\n"
+"Найдено: {total}"
+
+msgid "user_editor:ntf:not_found"
+msgstr "❌ <i>Пользователь не найден.</i>"
+
+msgid "user_editor:popup:user_not_found"
+msgstr "❌ Пользователь не найден."
+
+msgid "user_editor:message:details"
+msgstr ""
+"👤 <b>Карточка пользователя:</b>\n"
+"\n"
+"<b>Имя:</b> {first_name}\n"
+"<b>Telegram ID:</b> <code>{tg_id}</code>\n"
+"<b>Username:</b> {username}\n"
+"<b>Профиль:</b> <a href='{tg_link}'>открыть</a>\n"
+"\n"
+"<b>VPN ID:</b> <code>{vpn_id}</code>\n"
+"<b>Сервер:</b> {server}\n"
+"<b>Подписка:</b> {subscription}\n"
+"<b>Триал использован:</b> {trial_used}\n"
+"\n"
+"<b>Транзакции:</b> {completed_transactions}/{total_transactions}\n"
+"<b>Рефералов привёл:</b> {referrals_count}\n"
+"<b>Приглашён:</b> {referral_info}\n"
+"<b>Источник:</b> {source_invite}\n"
+"\n"
+"<b>Язык:</b> {language}\n"
+"<b>Зарегистрирован:</b> {created_at}"
+
+msgid "user_editor:detail:no_subscription"
+msgstr "нет"
+
+msgid "user_editor:detail:active_subscription"
+msgstr "✅ {plan} (осталось {days_left} дн.)"
+
+msgid "user_editor:detail:expired_subscription"
+msgstr "⚠️ {plan} (истекла)"
+
+msgid "user_editor:detail:no_referrer"
+msgstr "самостоятельно"
+
+msgid "user_editor:detail:referred_by"
+msgstr "по реферальной ссылке от <code>{referrer_tg_id}</code>"
+
+msgid "user_editor:filter:active"
+msgstr "активные"
+
+msgid "user_editor:filter:inactive"
+msgstr "без подписки"
+
+msgid "user_editor:filter:all"
+msgstr "все"
+
+msgid "user_editor:message:enter_message"
+msgstr ""
+"✉️ <b>Отправить сообщение пользователю:</b>\n"
+"\n"
+"Telegram ID: <code>{tg_id}</code>\n"
+"\n"
+"<i>Введите текст сообщения:</i>"
+
+msgid "user_editor:ntf:message_sent"
+msgstr "✅ <i>Сообщение отправлено!</i>"
+
+msgid "user_editor:ntf:message_failed"
+msgstr "❌ <i>Не удалось отправить сообщение. Возможно, пользователь заблокировал бота.</i>"
+
+#: app/bot/routers/admin_tools/statistics_handler.py
+msgid "statistics:message:main"
+msgstr ""
+"📈 <b>Статистика бота:</b>\n"
+"\n"
+"👥 <b>Пользователи:</b>\n"
+"Всего: {total_users}\n"
+"Новых сегодня: {new_today}\n"
+"Новых за неделю: {new_week}\n"
+"Новых за месяц: {new_month}\n"
+"Активных подписчиков: {active_subscribers}\n"
+"Триал использован: {trial_used}\n"
+"\n"
+"💳 <b>Транзакции (оплаченные):</b>\n"
+"Всего: {completed_transactions}\n"
+"Сегодня: {tx_today}\n"
+"За неделю: {tx_week}\n"
+"За месяц: {tx_month}\n"
+"\n"
+"🌐 <b>Серверы:</b>\n"
+"Всего: {total_servers} (онлайн: {online_servers})\n"
+"Пользователей на серверах: {total_connected}/{total_capacity}\n"
+"\n"
+"👥 <b>Рефералы:</b>\n"
+"Всего приглашений: {total_referrals}"
+
+msgid "statistics:button:refresh"
+msgstr "🔄 Обновить"
+
 #: app/bot/routers/download/handler.py:68
 #: app/bot/routers/download/handler.py:75
 msgid "download:message:choose_platform"

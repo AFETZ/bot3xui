@@ -8,7 +8,7 @@ from aiogram.types import CallbackQuery, Message
 from aiogram.utils.i18n import gettext as _
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.bot.filters import IsDev
+from app.bot.filters import IsAdmin, IsDev
 from app.bot.models import ServicesContainer
 from app.bot.routers.misc.keyboard import back_keyboard
 from app.bot.utils.constants import (
@@ -35,7 +35,7 @@ class AddServerStates(StatesGroup):
     confirmation = State()
 
 
-@router.callback_query(F.data == NavAdminTools.SERVER_MANAGEMENT, IsDev())
+@router.callback_query(F.data == NavAdminTools.SERVER_MANAGEMENT, IsAdmin())
 async def callback_server_management(
     callback: CallbackQuery,
     user: User,
@@ -249,7 +249,7 @@ async def callback_confirmation(
 
 
 # region Server
-@router.callback_query(F.data.startswith(NavAdminTools.SHOW_SERVER), IsDev())
+@router.callback_query(F.data.startswith(NavAdminTools.SHOW_SERVER), IsAdmin())
 async def callback_show_server(
     callback: CallbackQuery,
     user: User,
@@ -276,7 +276,7 @@ async def callback_show_server(
     )
 
 
-@router.callback_query(F.data.startswith(NavAdminTools.PING_SERVER), IsDev())
+@router.callback_query(F.data.startswith(NavAdminTools.PING_SERVER), IsAdmin())
 async def callback_ping_server(
     callback: CallbackQuery,
     user: User,
