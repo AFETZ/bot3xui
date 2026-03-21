@@ -714,6 +714,153 @@ msgstr "❌ Failed to delete the server."
 msgid "global:popup:development"
 msgstr "Under development!"
 
+#: app/bot/routers/admin_tools/user_handler.py
+msgid "user_editor:message:main"
+msgstr "👤 <b>User management:</b>"
+
+msgid "user_editor:button:list_users"
+msgstr "📋 User list"
+
+msgid "user_editor:button:search"
+msgstr "🔍 Search user"
+
+msgid "user_editor:button:active_users"
+msgstr "✅ Active"
+
+msgid "user_editor:button:inactive_users"
+msgstr "❌ No subscription"
+
+msgid "user_editor:button:prev_page"
+msgstr "◀️ Back"
+
+msgid "user_editor:button:next_page"
+msgstr "▶️ Next"
+
+msgid "user_editor:button:send_message"
+msgstr "✉️ Send message"
+
+msgid "user_editor:button:open_in_tg"
+msgstr "💬 Open in Telegram"
+
+msgid "user_editor:button:back_to_editor"
+msgstr "◀️ Back to user management"
+
+msgid "user_editor:message:no_users"
+msgstr "<i>No users found.</i>"
+
+msgid "user_editor:message:list"
+msgstr ""
+"👤 <b>Users ({filter}):</b>\n"
+"Total: {total}\n"
+"\n"
+"<i>[+] — has subscription, [—] — no subscription</i>"
+
+msgid "user_editor:message:search"
+msgstr ""
+"🔍 <b>Search user:</b>\n"
+"\n"
+"<i>Enter Telegram ID, username, or name to search</i>"
+
+msgid "user_editor:message:search_results"
+msgstr ""
+"🔍 <b>Search results for '{query}':</b>\n"
+"Found: {total}"
+
+msgid "user_editor:ntf:not_found"
+msgstr "❌ <i>User not found.</i>"
+
+msgid "user_editor:popup:user_not_found"
+msgstr "❌ User not found."
+
+msgid "user_editor:message:details"
+msgstr ""
+"👤 <b>User details:</b>\n"
+"\n"
+"<b>Name:</b> {first_name}\n"
+"<b>Telegram ID:</b> <code>{tg_id}</code>\n"
+"<b>Username:</b> {username}\n"
+"<b>Profile:</b> <a href='{tg_link}'>open</a>\n"
+"\n"
+"<b>VPN ID:</b> <code>{vpn_id}</code>\n"
+"<b>Server:</b> {server}\n"
+"<b>Subscription:</b> {subscription}\n"
+"<b>Trial used:</b> {trial_used}\n"
+"\n"
+"<b>Transactions:</b> {completed_transactions}/{total_transactions}\n"
+"<b>Referrals invited:</b> {referrals_count}\n"
+"<b>Invited by:</b> {referral_info}\n"
+"<b>Source:</b> {source_invite}\n"
+"\n"
+"<b>Language:</b> {language}\n"
+"<b>Registered:</b> {created_at}"
+
+msgid "user_editor:detail:no_subscription"
+msgstr "none"
+
+msgid "user_editor:detail:active_subscription"
+msgstr "✅ {plan} ({days_left} days left)"
+
+msgid "user_editor:detail:expired_subscription"
+msgstr "⚠️ {plan} (expired)"
+
+msgid "user_editor:detail:no_referrer"
+msgstr "direct"
+
+msgid "user_editor:detail:referred_by"
+msgstr "referred by <code>{referrer_tg_id}</code>"
+
+msgid "user_editor:filter:active"
+msgstr "active"
+
+msgid "user_editor:filter:inactive"
+msgstr "no subscription"
+
+msgid "user_editor:filter:all"
+msgstr "all"
+
+msgid "user_editor:message:enter_message"
+msgstr ""
+"✉️ <b>Send message to user:</b>\n"
+"\n"
+"Telegram ID: <code>{tg_id}</code>\n"
+"\n"
+"<i>Enter message text:</i>"
+
+msgid "user_editor:ntf:message_sent"
+msgstr "✅ <i>Message sent!</i>"
+
+msgid "user_editor:ntf:message_failed"
+msgstr "❌ <i>Failed to send message. User may have blocked the bot.</i>"
+
+#: app/bot/routers/admin_tools/statistics_handler.py
+msgid "statistics:message:main"
+msgstr ""
+"📈 <b>Bot statistics:</b>\n"
+"\n"
+"👥 <b>Users:</b>\n"
+"Total: {total_users}\n"
+"New today: {new_today}\n"
+"New this week: {new_week}\n"
+"New this month: {new_month}\n"
+"Active subscribers: {active_subscribers}\n"
+"Trial used: {trial_used}\n"
+"\n"
+"💳 <b>Transactions (completed):</b>\n"
+"Total: {completed_transactions}\n"
+"Today: {tx_today}\n"
+"This week: {tx_week}\n"
+"This month: {tx_month}\n"
+"\n"
+"🌐 <b>Servers:</b>\n"
+"Total: {total_servers} (online: {online_servers})\n"
+"Users on servers: {total_connected}/{total_capacity}\n"
+"\n"
+"👥 <b>Referrals:</b>\n"
+"Total invitations: {total_referrals}"
+
+msgid "statistics:button:refresh"
+msgstr "🔄 Refresh"
+
 #: app/bot/routers/download/handler.py:68
 #: app/bot/routers/download/handler.py:75
 msgid "download:message:choose_platform"

@@ -18,13 +18,12 @@ PROMOCODE_CUSTOM_ACTIVATIONS_CALLBACK = "promocode_custom_activations"
 def admin_tools_keyboard(is_dev: bool) -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
 
-    if is_dev:
-        builder.row(
-            InlineKeyboardButton(
-                text=_("admin_tools:button:server_management"),
-                callback_data=NavAdminTools.SERVER_MANAGEMENT,
-            )
+    builder.row(
+        InlineKeyboardButton(
+            text=_("admin_tools:button:server_management"),
+            callback_data=NavAdminTools.SERVER_MANAGEMENT,
         )
+    )
 
     builder.row(
         InlineKeyboardButton(
@@ -410,6 +409,117 @@ def invite_details_keyboard(invite: Invite) -> InlineKeyboardMarkup:
 
     builder.row(back_button(NavAdminTools.LIST_INVITES))
 
+    return builder.as_markup()
+
+
+def user_editor_keyboard() -> InlineKeyboardMarkup:
+    builder = InlineKeyboardBuilder()
+
+    builder.row(
+        InlineKeyboardButton(
+            text=_("user_editor:button:list_users"),
+            callback_data=NavAdminTools.USER_LIST,
+        )
+    )
+    builder.row(
+        InlineKeyboardButton(
+            text=_("user_editor:button:search"),
+            callback_data=NavAdminTools.USER_SEARCH,
+        )
+    )
+    builder.row(
+        InlineKeyboardButton(
+            text=_("user_editor:button:active_users"),
+            callback_data=NavAdminTools.USER_ACTIVE_FILTER,
+        ),
+        InlineKeyboardButton(
+            text=_("user_editor:button:inactive_users"),
+            callback_data=NavAdminTools.USER_INACTIVE_FILTER,
+        ),
+    )
+
+    builder.row(back_button(NavAdminTools.MAIN))
+    builder.row(back_to_main_menu_button())
+    return builder.as_markup()
+
+
+def user_list_keyboard(
+    users: list, page: int = 0, limit: int = 8, filter_type: str = "all"
+) -> InlineKeyboardMarkup:
+    builder = InlineKeyboardBuilder()
+    total_users = len(users)
+    start_idx = page * limit
+    end_idx = min(start_idx + limit, total_users)
+
+    for i in range(start_idx, end_idx):
+        u = users[i]
+        username = f"@{u.username}" if u.username else u.first_name
+        has_sub = "+" if u.current_plan_code else "—"
+        label = f"[{has_sub}] {username} ({u.tg_id})"
+        builder.row(
+            InlineKeyboardButton(
+                text=label,
+                callback_data=NavAdminTools.USER_DETAILS + f"_{u.tg_id}",
+            )
+        )
+
+    nav_row = []
+    if page > 0:
+        nav_row.append(
+            InlineKeyboardButton(
+                text=_("user_editor:button:prev_page"),
+                callback_data=NavAdminTools.USER_LIST_PAGE + f"_{filter_type}_{page - 1}",
+            )
+        )
+
+    if (page + 1) * limit < total_users:
+        nav_row.append(
+            InlineKeyboardButton(
+                text=_("user_editor:button:next_page"),
+                callback_data=NavAdminTools.USER_LIST_PAGE + f"_{filter_type}_{page + 1}",
+            )
+        )
+
+    if nav_row:
+        builder.row(*nav_row)
+
+    builder.row(back_button(NavAdminTools.USER_EDITOR))
+    return builder.as_markup()
+
+
+def user_details_keyboard(tg_id: int) -> InlineKeyboardMarkup:
+    builder = InlineKeyboardBuilder()
+
+    builder.row(
+        InlineKeyboardButton(
+            text=_("user_editor:button:send_message"),
+            callback_data=NavAdminTools.USER_SEND_MESSAGE + f"_{tg_id}",
+        )
+    )
+    builder.row(
+        InlineKeyboardButton(
+            text=_("user_editor:button:open_in_tg"),
+            url=f"tg://user?id={tg_id}",
+        )
+    )
+
+    builder.row(back_button(NavAdminTools.USER_LIST))
+    builder.row(back_button(NavAdminTools.USER_EDITOR, _("user_editor:button:back_to_editor")))
+    return builder.as_markup()
+
+
+def statistics_keyboard() -> InlineKeyboardMarkup:
+    builder = InlineKeyboardBuilder()
+
+    builder.row(
+        InlineKeyboardButton(
+            text=_("statistics:button:refresh"),
+            callback_data=NavAdminTools.STATISTICS,
+        )
+    )
+
+    builder.row(back_button(NavAdminTools.MAIN))
+    builder.row(back_to_main_menu_button())
     return builder.as_markup()
 
 
