@@ -53,10 +53,17 @@ class Yoomoney(PaymentGateway):
         bot_username = (await self.bot.get_me()).username
         redirect_url = f"https://t.me/{bot_username}"
 
-        description = _("payment:invoice:description").format(
-            devices=format_device_count(data.devices),
-            duration=format_subscription_period(data.duration),
-        )
+        devices = format_device_count(data.devices)
+        if data.is_change:
+            description = (
+                f"Доплата за смену тарифа | {devices}. "
+                "Дата окончания подписки не изменится."
+            )
+        else:
+            description = _("payment:invoice:description").format(
+                devices=devices,
+                duration=format_subscription_period(data.duration),
+            )
 
         price = str(data.price)
         payment_id = str(uuid.uuid4())

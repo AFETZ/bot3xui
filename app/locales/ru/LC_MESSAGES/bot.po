@@ -1385,7 +1385,8 @@ msgid "payment:message:change_success"
 msgstr ""
 "✅ <b>Оплата прошла успешно!</b>\n"
 "\n"
-"Ваша подписка была обновлена ​​на {device} и {duration}."
+"Ваш тариф изменён на {plan}.\n"
+"Дата окончания подписки не изменилась."
 
 #: app/bot/tasks/subscription_expiry.py:55
 msgid "task:message:subscription_expiry"

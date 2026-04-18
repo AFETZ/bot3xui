@@ -191,13 +191,13 @@ class NotificationService:
         self,
         user_id: int,
         data: SubscriptionData,
+        plan_title: str = "",
         message_effect_id: str | None = SUCCESS_MESSAGE_EFFECT_ID,
     ) -> None:
         await self.notify_by_id(
             chat_id=user_id,
             text=__("payment:message:change_success").format(
-                device=format_device_count(data.devices),
-                duration=format_subscription_period(data.duration),
+                plan=plan_title or format_device_count(data.devices),
             ),
             message_effect_id=message_effect_id,
         )

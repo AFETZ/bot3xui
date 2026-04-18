@@ -54,8 +54,18 @@ class TelegramStars(PaymentGateway):
         prices = [LabeledPrice(label=self.currency.code, amount=amount)]
         devices = format_device_count(data.devices)
         duration = format_subscription_period(data.duration)
-        title = _("payment:invoice:title").format(devices=devices, duration=duration)
-        description = _("payment:invoice:description").format(devices=devices, duration=duration)
+        if data.is_change:
+            title = "Смена тарифа"
+            description = (
+                f"Доплата за смену тарифа | {devices}. "
+                "Дата окончания подписки не изменится."
+            )
+        else:
+            title = _("payment:invoice:title").format(devices=devices, duration=duration)
+            description = _("payment:invoice:description").format(
+                devices=devices,
+                duration=duration,
+            )
         pay_url = await self.bot.create_invoice_link(
             title=title,
             description=description,

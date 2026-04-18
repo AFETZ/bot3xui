@@ -101,6 +101,31 @@ def subscription_keyboard(
     return builder.as_markup()
 
 
+def plan_change_keyboard(
+    quotes: list,
+    callback_data: SubscriptionData,
+    currency_symbol: str,
+) -> InlineKeyboardMarkup:
+    builder = InlineKeyboardBuilder()
+
+    for quote in quotes:
+        callback_data.devices = quote.target_plan.devices
+        callback_data.plan_code = quote.target_plan.code
+        callback_data.price = float(quote.price)
+        callback_data.duration = quote.renewal_duration_days
+        label = quote.target_plan.title or format_device_count(quote.target_plan.devices)
+        price_label = f"+{quote.price} {currency_symbol}" if quote.price > 0 else "бесплатно"
+        builder.button(
+            text=f"{label} | {price_label}",
+            callback_data=callback_data.pack(),
+        )
+
+    builder.adjust(1)
+    builder.row(back_button(NavSubscription.MAIN))
+    builder.row(back_to_main_menu_button())
+    return builder.as_markup()
+
+
 def devices_keyboard(
     plans: list[Plan],
     callback_data: SubscriptionData,
@@ -172,11 +197,12 @@ def pay_keyboard(pay_url: str, callback_data: SubscriptionData) -> InlineKeyboar
 
     builder.row(InlineKeyboardButton(text=_("subscription:button:pay"), url=pay_url))
 
-    callback_data.state = (
-        NavSubscription.UPGRADE_PAYMENT
-        if callback_data.is_upgrade
-        else NavSubscription.DURATION
-    )
+    if callback_data.is_upgrade:
+        callback_data.state = NavSubscription.UPGRADE_PAYMENT
+    elif callback_data.is_change:
+        callback_data.state = NavSubscription.CHANGE_CONFIRM
+    else:
+        callback_data.state = NavSubscription.DURATION
     builder.row(
         back_button(
             callback_data.pack(),
@@ -212,6 +238,14 @@ def payment_method_keyboard(
 
     if callback_data.is_upgrade:
         builder.row(back_button(NavSubscription.ADDITIONAL_PROFILE))
+    elif callback_data.is_change:
+        callback_data.state = NavSubscription.CHANGE
+        builder.row(
+            back_button(
+                callback_data.pack(),
+                text=_("subscription:button:change_devices"),
+            )
+        )
     else:
         callback_data.state = NavSubscription.DEVICES
         builder.row(

@@ -193,7 +193,6 @@ class PaymentGateway(ABC):
                 success = await self.services.vpn.change_subscription(
                     user=user,
                     devices=data.devices,
-                    duration=data.duration,
                 )
                 if not success:
                     logger.error("Failed to change subscription for user %s after payment.", user.tg_id)
@@ -202,13 +201,13 @@ class PaymentGateway(ABC):
                     await self.services.subscription.update_current_plan(
                         user=user,
                         plan_code=resolved_plan.code,
-                        refresh_period=True,
-                        period_duration_days=data.duration,
+                        refresh_period=False,
                     )
-                logger.info(f"Subscription changed for user {user.tg_id}")
+                logger.info(f"Subscription plan changed for user {user.tg_id}")
                 await self.services.notification.notify_change_success(
                     user_id=user.tg_id,
                     data=data,
+                    plan_title=resolved_plan.title if resolved_plan else "",
                 )
             else:
                 success = await self.services.vpn.create_subscription(

@@ -321,14 +321,14 @@ class VPNService:
             replace_devices=True,
         )
 
-    async def change_subscription(self, user: User, devices: int, duration: int) -> bool:
+    async def change_subscription(self, user: User, devices: int) -> bool:
         if await self.is_client_exists(user):
             return await self.update_client(
                 user,
                 devices,
-                duration,
+                0,
                 replace_devices=True,
-                replace_duration=True,
+                replace_duration=False,
             )
         return False
 

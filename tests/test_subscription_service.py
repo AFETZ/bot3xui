@@ -52,6 +52,21 @@ class FakePlanService:
             None,
         )
 
+    def get_plan_changes(self, current_plan, duration, currency):
+        if isinstance(current_plan, str):
+            current_plan = self.get_plan_by_code(current_plan)
+        if not current_plan:
+            return []
+
+        current_price = current_plan.get_price(currency=currency, duration=duration)
+        return [
+            plan
+            for plan in self._plans
+            if plan.is_public
+            and plan.code != current_plan.code
+            and plan.get_price(currency=currency, duration=duration) > current_price
+        ]
+
 
 @pytest.fixture
 def plan_set():
@@ -218,6 +233,83 @@ async def test_get_upgrade_quote_uses_remaining_period(monkeypatch, subscription
     assert quote.target_plan.code == "p3a"
     assert quote.price == 75
     assert quote.renewal_price == 498
+
+
+@pytest.mark.asyncio
+async def test_get_plan_change_quotes_prorate_difference_without_period_reset(
+    monkeypatch, subscription_service, plan_set
+):
+    current_plan, _, five_devices = plan_set
+    user = SimpleNamespace(tg_id=102, vpn_id="vpn-102")
+    expiry_timestamp = 15 * 24 * 60 * 60 * 1000
+    status = SubscriptionStatus(
+        user=user,
+        client_data=ClientData(
+            max_devices=3,
+            traffic_total=0,
+            traffic_remaining=0,
+            traffic_used=0,
+            traffic_up=0,
+            traffic_down=0,
+            expiry_time=expiry_timestamp,
+        ),
+        plan=current_plan,
+        is_active=True,
+        status_check_ok=True,
+        period_duration_days=30,
+        expiry_timestamp=expiry_timestamp,
+    )
+
+    monkeypatch.setattr(
+        "app.bot.services.subscription.get_current_timestamp",
+        lambda: 0,
+    )
+    subscription_service.get_subscription_status = AsyncMock(return_value=status)
+
+    quotes = await subscription_service.get_plan_change_quotes(user=user, currency=Currency.RUB)
+    quote_by_code = {quote.target_plan.code: quote for quote in quotes}
+
+    assert quote_by_code[five_devices.code].price == 50
+    assert quote_by_code[five_devices.code].expiry_timestamp == expiry_timestamp
+    assert quote_by_code[five_devices.code].renewal_duration_days == 30
+
+
+@pytest.mark.asyncio
+async def test_get_plan_change_quotes_keep_zero_price_options(
+    monkeypatch, subscription_service, plan_set
+):
+    current_plan, _, five_devices = plan_set
+    user = SimpleNamespace(tg_id=103, vpn_id="vpn-103")
+    expiry_timestamp = 3600 * 1000
+    status = SubscriptionStatus(
+        user=user,
+        client_data=ClientData(
+            max_devices=3,
+            traffic_total=0,
+            traffic_remaining=0,
+            traffic_used=0,
+            traffic_up=0,
+            traffic_down=0,
+            expiry_time=expiry_timestamp,
+        ),
+        plan=current_plan,
+        is_active=True,
+        status_check_ok=True,
+        period_duration_days=30,
+        expiry_timestamp=expiry_timestamp,
+    )
+
+    monkeypatch.setattr(
+        "app.bot.services.subscription.get_current_timestamp",
+        lambda: 0,
+    )
+    subscription_service.get_subscription_status = AsyncMock(return_value=status)
+
+    quotes = await subscription_service.get_plan_change_quotes(user=user, currency=Currency.RUB)
+    quote_by_code = {quote.target_plan.code: quote for quote in quotes}
+
+    assert five_devices.code in quote_by_code
+    assert quote_by_code[five_devices.code].price == 0
 
 
 @pytest.mark.asyncio

@@ -21,6 +21,7 @@ from .keyboard import (
     devices_keyboard,
     duration_keyboard,
     payment_method_keyboard,
+    plan_change_keyboard,
     subscription_keyboard,
     upgrade_offer_keyboard,
 )
@@ -267,20 +268,48 @@ async def callback_subscription_change(
     callback: CallbackQuery,
     user: User,
     callback_data: SubscriptionData,
+    config: Config,
     services: ServicesContainer,
 ) -> None:
     logger.info(f"User {user.tg_id} started change subscription.")
-    callback_data.state = NavSubscription.DEVICES
+    currency = Currency.from_code(config.shop.CURRENCY)
+    quotes = await services.subscription.get_plan_change_quotes(
+        user=user, currency=currency,
+    )
+
+    if not quotes:
+        await services.notification.show_popup(
+            callback=callback,
+            text="Нет доступных тарифов для перехода.",
+        )
+        return
+
+    status = await services.subscription.get_subscription_status(user)
+    remaining_days = _get_remaining_period_days(status)
+    remaining_text = (
+        format_subscription_period(remaining_days)
+        if remaining_days is not None and remaining_days > 0
+        else "-"
+    )
+
+    callback_data.state = NavSubscription.CHANGE_CONFIRM
     callback_data.is_change = True
     callback_data.is_extend = False
     callback_data.is_upgrade = False
-    callback_data.plan_code = ""
+
+    text = (
+        "Сменить тариф\n\n"
+        f"Текущий тариф: {_get_plan_title(status)}\n"
+        f"Активна до: {status.expiry_date}\n"
+        f"Осталось: {remaining_text}\n\n"
+        "Доплата считается только за оставшийся срок.\n"
+        "Дата окончания подписки не изменится.\n\n"
+        "Выберите новый тариф:"
+    )
+
     await callback.message.edit_text(
-        text=_("subscription:message:devices"),
-        reply_markup=devices_keyboard(
-            services.plan.get_all_plans(prefer_additional_profile=True),
-            callback_data,
-        ),
+        text=text,
+        reply_markup=plan_change_keyboard(quotes, callback_data, currency.symbol),
     )
 
 
@@ -373,6 +402,121 @@ async def callback_duration_selected(
             plan=plan,
             callback_data=callback_data,
             gateways=gateway_factory.get_gateways(),
+        ),
+    )
+
+
+@router.callback_query(SubscriptionData.filter(F.state == NavSubscription.CHANGE_CONFIRM))
+async def callback_change_confirm(
+    callback: CallbackQuery,
+    user: User,
+    callback_data: SubscriptionData,
+    config: Config,
+    services: ServicesContainer,
+    gateway_factory: GatewayFactory,
+) -> None:
+    logger.info(
+        "User %s selected plan change to %s (%s devices).",
+        user.tg_id,
+        callback_data.plan_code,
+        callback_data.devices,
+    )
+    target_plan = services.plan.get_plan_by_code(callback_data.plan_code)
+    if not target_plan:
+        await services.notification.show_popup(
+            callback=callback,
+            text=_("subscription:popup:error_fetching_plan"),
+        )
+        return
+
+    shop_currency = Currency.from_code(config.shop.CURRENCY)
+    display_quote = await services.subscription.get_upgrade_quote(
+        user=user, currency=shop_currency, target_plan=target_plan,
+    )
+    if not display_quote:
+        await services.notification.show_popup(
+            callback=callback,
+            text="Смена тарифа сейчас недоступна.",
+        )
+        return
+
+    if display_quote.price == 0:
+        success = await services.vpn.change_subscription(
+            user=user,
+            devices=target_plan.devices,
+        )
+        if not success:
+            await services.notification.show_popup(
+                callback=callback,
+                text="Не удалось изменить тариф.",
+            )
+            return
+
+        await services.subscription.update_current_plan(
+            user=user,
+            plan_code=target_plan.code,
+            refresh_period=False,
+        )
+
+        refreshed_status = await services.subscription.get_subscription_status(user)
+        refreshed_callback_data = SubscriptionData(
+            state=NavSubscription.PROCESS,
+            user_id=user.tg_id,
+            plan_code=refreshed_status.plan.code if refreshed_status.plan else "",
+        )
+        await show_subscription(
+            callback=callback,
+            user=user,
+            status=refreshed_status,
+            callback_data=refreshed_callback_data,
+            services=services,
+        )
+        await services.notification.show_popup(
+            callback=callback,
+            text="Тариф изменён. Доплата не потребовалась.",
+        )
+        return
+
+    prices_by_callback: dict[str, float | int] = {}
+    for gateway in gateway_factory.get_gateways():
+        gw_quote = await services.subscription.get_upgrade_quote(
+            user=user, currency=gateway.currency, target_plan=target_plan,
+        )
+        if gw_quote:
+            prices_by_callback[gateway.callback] = gw_quote.price
+
+    callback_data.state = NavSubscription.CHANGE_CONFIRM
+    callback_data.devices = target_plan.devices
+    callback_data.duration = display_quote.renewal_duration_days
+    callback_data.plan_code = target_plan.code
+    callback_data.price = float(display_quote.price)
+    callback_data.is_change = True
+    callback_data.is_extend = False
+    callback_data.is_upgrade = False
+
+    status = await services.subscription.get_subscription_status(user)
+    remaining_days = _get_remaining_period_days(status)
+    remaining_text = (
+        format_subscription_period(remaining_days)
+        if remaining_days is not None and remaining_days > 0
+        else "-"
+    )
+
+    text = (
+        "Смена тарифа\n\n"
+        f"Текущий: {_get_plan_title(status)}\n"
+        f"Новый: {target_plan.title or format_device_count(target_plan.devices)}\n\n"
+        f"Доплата за оставшийся срок: {display_quote.price} {shop_currency.symbol}\n"
+        f"Дата окончания не изменится: {display_quote.expiry_date}"
+    )
+
+    await callback.message.edit_text(
+        text=text,
+        reply_markup=payment_method_keyboard(
+            plan=target_plan,
+            callback_data=callback_data,
+            gateways=gateway_factory.get_gateways(),
+            prices_by_callback=prices_by_callback,
         ),
     )
 

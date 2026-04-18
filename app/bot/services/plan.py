@@ -86,19 +86,37 @@ class PlanService:
             None,
         )
 
+    @staticmethod
+    def _public_plan_sort_key(plan: Plan) -> tuple[int, int, str]:
+        return (
+            1 if plan.includes_additional_profile else 0,
+            plan.devices,
+            plan.code,
+        )
+
+    def get_plan_changes(self, current_plan: Plan | str | None, duration: int, currency: str) -> list[Plan]:
+        """Return public plans that cost more than the current one for the given duration."""
+        if isinstance(current_plan, str):
+            current_plan = self.get_plan_by_code(current_plan)
+        if not current_plan:
+            return []
+
+        current_price = current_plan.get_price(currency=currency, duration=duration)
+        result = []
+        for plan in self._plans:
+            if not plan.is_public or plan.code == current_plan.code:
+                continue
+            try:
+                plan_price = plan.get_price(currency=currency, duration=duration)
+            except (KeyError, TypeError):
+                continue
+            if plan_price > current_price:
+                result.append(plan)
+        return sorted(result, key=self._public_plan_sort_key)
+
     def get_all_plans(self, *, prefer_additional_profile: bool = False) -> list[Plan]:
         public_plans = [plan for plan in self._plans if plan.is_public]
-        if not prefer_additional_profile:
-            return public_plans
-
-        return sorted(
-            public_plans,
-            key=lambda plan: (
-                plan.devices,
-                0 if plan.includes_additional_profile else 1,
-                plan.code,
-            ),
-        )
+        return sorted(public_plans, key=self._public_plan_sort_key)
 
     def get_durations(self) -> list[int]:
         return self._durations

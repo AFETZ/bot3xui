@@ -270,17 +270,59 @@ class SubscriptionService:
         )
         return normalized_price
 
+    def calculate_plan_change_price(
+        self,
+        current_plan: Plan,
+        target_plan: Plan,
+        *,
+        duration_days: int,
+        currency: Currency | str,
+        remaining_seconds: float,
+    ) -> float | int:
+        """Calculate price for plan change with period reset.
+
+        Formula: target_full_price - credit_for_unused_old_plan.
+        The subscription period resets to a full new period.
+        """
+        current_price = current_plan.get_price(currency=currency, duration=duration_days)
+        target_price = target_plan.get_price(currency=currency, duration=duration_days)
+        full_period_seconds = duration_days * 86_400
+
+        if remaining_seconds <= 0 or full_period_seconds <= 0:
+            charge = target_price
+        else:
+            credit = current_price * remaining_seconds / full_period_seconds
+            charge = max(target_price - credit, 0)
+
+        normalized_price = normalize_price(charge, currency)
+        logger.info(
+            "Calculated plan change price: current_plan=%s target_plan=%s duration_days=%s "
+            "remaining_seconds=%.2f current_price=%s target_price=%s credit=%.2f result=%s",
+            current_plan.code,
+            target_plan.code,
+            duration_days,
+            remaining_seconds,
+            current_price,
+            target_price,
+            current_price * remaining_seconds / full_period_seconds if full_period_seconds > 0 else 0,
+            normalized_price,
+        )
+        return normalized_price
+
     async def get_upgrade_quote(
         self,
         user: User,
         *,
         currency: Currency | str,
+        target_plan: "Plan | None" = None,
+        reset_period: bool = False,
     ) -> UpgradeQuote | None:
         status = await self.get_subscription_status(user)
         if not status.status_check_ok or not status.is_active or not status.plan:
             return None
 
-        target_plan = self.plan_service.get_upgrade_plan(status.plan)
+        if target_plan is None:
+            target_plan = self.plan_service.get_upgrade_plan(status.plan)
         if not target_plan:
             return None
 
@@ -294,13 +336,24 @@ class SubscriptionService:
             requested_duration_days=status.period_duration_days,
         )
         remaining_seconds = max((status.expiry_timestamp - get_current_timestamp()) / 1000, 0)
-        price = self.calculate_upgrade_price(
-            current_plan=status.plan,
-            target_plan=target_plan,
-            duration_days=duration_days,
-            currency=currency,
-            remaining_seconds=remaining_seconds,
-        )
+
+        if reset_period:
+            price = self.calculate_plan_change_price(
+                current_plan=status.plan,
+                target_plan=target_plan,
+                duration_days=duration_days,
+                currency=currency,
+                remaining_seconds=remaining_seconds,
+            )
+        else:
+            price = self.calculate_upgrade_price(
+                current_plan=status.plan,
+                target_plan=target_plan,
+                duration_days=duration_days,
+                currency=currency,
+                remaining_seconds=remaining_seconds,
+            )
+
         renewal_price = normalize_price(
             target_plan.get_price(currency=currency, duration=duration_days),
             currency,
@@ -314,6 +367,43 @@ class SubscriptionService:
             renewal_duration_days=duration_days,
             expiry_timestamp=status.expiry_timestamp,
         )
+
+    async def get_plan_change_quotes(
+        self,
+        user: User,
+        *,
+        currency: Currency | str,
+    ) -> list[UpgradeQuote]:
+        status = await self.get_subscription_status(user)
+        if not status.status_check_ok or not status.is_active or not status.plan:
+            return []
+        if status.expiry_timestamp is None:
+            return []
+
+        duration_days = await self._resolve_upgrade_duration_days(
+            user=user,
+            current_plan=status.plan,
+            target_plan=status.plan,
+            requested_duration_days=status.period_duration_days,
+        )
+
+        available_plans = self.plan_service.get_plan_changes(
+            current_plan=status.plan,
+            duration=duration_days,
+            currency=Currency.from_code(currency).code if isinstance(currency, str) else currency.code,
+        )
+
+        quotes: list[UpgradeQuote] = []
+        for target in available_plans:
+            quote = await self.get_upgrade_quote(
+                user=user,
+                currency=currency,
+                target_plan=target,
+            )
+            if quote:
+                quotes.append(quote)
+
+        return quotes
 
     async def update_current_plan(
         self,

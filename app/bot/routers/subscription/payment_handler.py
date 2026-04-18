@@ -65,6 +65,18 @@ async def callback_payment_method_selected(
             price = quote.price
             callback_data.duration = quote.renewal_duration_days
             duration = callback_data.duration
+        elif callback_data.is_change:
+            target_plan = services.plan.get_plan_by_code(callback_data.plan_code)
+            quote = await services.subscription.get_upgrade_quote(
+                user=user,
+                currency=gateway.currency,
+                target_plan=target_plan,
+            )
+            if not quote:
+                raise ValueError(f"Plan change quote is not available for user {user.tg_id}")
+            price = quote.price
+            callback_data.duration = quote.renewal_duration_days
+            duration = callback_data.duration
         else:
             price = plan.get_price(currency=gateway.currency, duration=duration)
         callback_data.price = price
@@ -79,10 +91,15 @@ async def callback_payment_method_selected(
                 "Обход белых списков включится сразу после оплаты, а текущая дата окончания "
                 "подписки не изменится."
             )
+        elif callback_data.is_change:
+            text = (
+                "Смена тарифа:\n\n"
+                "Новый тариф: {plan}\n"
+                "Доплата за оставшийся срок: {price} {currency}\n\n"
+                "Дата окончания подписки не изменится."
+            )
         elif callback_data.is_extend:
             text = _("payment:message:order_extend")
-        elif callback_data.is_change:
-            text = _("payment:message:order_change")
         else:
             text = _("payment:message:order")
 

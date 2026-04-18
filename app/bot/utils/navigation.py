@@ -37,6 +37,7 @@ class NavSubscription(str, Enum):
     MAIN = "subscription"
     ADDITIONAL_PROFILE = "additional_profile"
     CHANGE = "change"
+    CHANGE_CONFIRM = "change_confirm"
     EXTEND = "extend"
     UPGRADE = "upgrade"
     UPGRADE_PAYMENT = "upgrade_payment"
