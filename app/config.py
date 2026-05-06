@@ -71,6 +71,9 @@ class BotConfig:
     DOMAIN: str
     PORT: int
     START_IMAGE: str | None
+    PROXY_URL: str | None
+    API_SERVER: str | None
+    USE_WEBHOOK: bool
 
 
 @dataclass
@@ -292,6 +295,9 @@ def load_config() -> Config:
             DOMAIN=f"https://{env.str('BOT_DOMAIN')}",
             PORT=env.int("BOT_PORT", default=DEFAULT_BOT_PORT),
             START_IMAGE=env.str("BOT_START_IMAGE", default=None),
+            PROXY_URL=env.str("BOT_PROXY_URL", default=None),
+            API_SERVER=env.str("BOT_API_SERVER", default=None),
+            USE_WEBHOOK=env.bool("BOT_USE_WEBHOOK", default=True),
         ),
         shop=ShopConfig(
             EMAIL=env.str("SHOP_EMAIL", default=DEFAULT_SHOP_EMAIL),

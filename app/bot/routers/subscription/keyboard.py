@@ -114,7 +114,9 @@ def plan_change_keyboard(
         callback_data.price = float(quote.price)
         callback_data.duration = quote.renewal_duration_days
         label = quote.target_plan.title or format_device_count(quote.target_plan.devices)
-        price_label = f"+{quote.price} {currency_symbol}" if quote.price > 0 else "бесплатно"
+        if quote.target_plan.is_popular:
+            label = f"🔥 {label}"
+        price_label = f"+{quote.price} {currency_symbol}" if quote.price > 0 else "без доплаты"
         builder.button(
             text=f"{label} | {price_label}",
             callback_data=callback_data.pack(),
@@ -135,8 +137,11 @@ def devices_keyboard(
     for plan in plans:
         callback_data.devices = plan.devices
         callback_data.plan_code = plan.code
+        label = plan.title or format_device_count(plan.devices)
+        if plan.is_popular:
+            label = f"🔥 {label}"
         builder.button(
-            text=plan.title or format_device_count(plan.devices),
+            text=label,
             callback_data=callback_data.pack(),
         )
 
@@ -188,6 +193,26 @@ def duration_keyboard(
             )
         )
 
+    builder.row(back_to_main_menu_button())
+    return builder.as_markup()
+
+
+def change_apply_confirm_keyboard(callback_data: SubscriptionData) -> InlineKeyboardMarkup:
+    builder = InlineKeyboardBuilder()
+    callback_data.state = NavSubscription.CHANGE_APPLY
+    builder.row(
+        InlineKeyboardButton(
+            text="Подтвердить смену тарифа",
+            callback_data=callback_data.pack(),
+        )
+    )
+    callback_data.state = NavSubscription.CHANGE
+    builder.row(
+        back_button(
+            callback_data.pack(),
+            text="Назад к выбору тарифа",
+        )
+    )
     builder.row(back_to_main_menu_button())
     return builder.as_markup()
 

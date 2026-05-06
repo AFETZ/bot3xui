@@ -25,7 +25,7 @@ class MaintenanceMiddleware(BaseMiddleware):
         data: dict[str, Any],
     ) -> Any:
         if isinstance(event, Update):
-            user: TelegramUser | None = event.event.from_user
+            user: TelegramUser | None = getattr(event.event, "from_user", None)
 
             if user is not None:
                 is_admin = await IsAdmin()(user_id=user.id)

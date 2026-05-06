@@ -2,6 +2,8 @@ services:
   traefik:
     image: "traefik:latest"
     container_name: "traefik"
+    profiles:
+      - legacy-traefik
     environment:
       - DOCKER_API_VERSION=1.45
     restart: always
@@ -29,12 +31,15 @@ services:
     image: redis:latest
     container_name: 3xui-shop-redis
     restart: always
+    ports:
+      - "127.0.0.1:6380:6379"
     volumes:
-      - redis_data:/data
+      - ./.local/redis-data:/data
 
   bot:
     build: .
     container_name: 3xui-shop-bot
+    network_mode: host
     volumes:
       - ./app/data:/app/data
       - ./plans.json:/app/data/plans.json
@@ -42,6 +47,10 @@ services:
       - ./app/logs:/app/logs
     env_file:
       - .env
+    environment:
+      - REDIS_HOST=127.0.0.1
+      - REDIS_PORT=6380
+      - BOT_PROXY_URL=socks5://127.0.0.1:10808
     stop_signal: SIGINT
     restart: unless-stopped
     command: sh -c " 
@@ -50,12 +59,6 @@ services:
       poetry run python /app/__main__.py"
     depends_on:
       - redis
-    labels:
-      - "traefik.enable=true"
-      - "traefik.http.routers.bot.rule=Host(`${BOT_HOST}`)"
-      - "traefik.http.routers.bot.entrypoints=websecure"
-      - "traefik.http.routers.bot.tls.certresolver=letsencrypt"
-      - "traefik.http.services.bot.loadbalancer.server.port=8080"
 
 volumes:
   redis_data:

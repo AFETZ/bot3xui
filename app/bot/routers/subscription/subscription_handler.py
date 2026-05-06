@@ -18,6 +18,7 @@ from app.db.models import User
 
 from .keyboard import (
     additional_profile_keyboard,
+    change_apply_confirm_keyboard,
     devices_keyboard,
     duration_keyboard,
     payment_method_keyboard,
@@ -302,7 +303,8 @@ async def callback_subscription_change(
         f"Текущий тариф: {_get_plan_title(status)}\n"
         f"Активна до: {status.expiry_date}\n"
         f"Осталось: {remaining_text}\n\n"
-        "Доплата считается только за оставшийся срок.\n"
+        "Можно перейти на более дорогой тариф (с доплатой за оставшийся срок) "
+        "или на более дешёвый (без доплаты и без возврата средств).\n"
         "Дата окончания подписки не изменится.\n\n"
         "Выберите новый тариф:"
     )
@@ -441,39 +443,50 @@ async def callback_change_confirm(
         return
 
     if display_quote.price == 0:
-        success = await services.vpn.change_subscription(
-            user=user,
-            devices=target_plan.devices,
-        )
-        if not success:
-            await services.notification.show_popup(
-                callback=callback,
-                text="Не удалось изменить тариф.",
+        status = await services.subscription.get_subscription_status(user)
+        current_plan = status.plan
+
+        warning_lines: list[str] = []
+        if current_plan and target_plan.devices < current_plan.devices:
+            warning_lines.append(
+                f"Количество устройств уменьшится с {current_plan.devices} до {target_plan.devices}. "
+                "Лишние устройства могут быть отключены."
             )
-            return
+        if (
+            current_plan
+            and current_plan.includes_additional_profile
+            and not target_plan.includes_additional_profile
+        ):
+            warning_lines.append(
+                "Обход белых списков будет отключён — ссылка БС перестанет работать."
+            )
 
-        await services.subscription.update_current_plan(
-            user=user,
-            plan_code=target_plan.code,
-            refresh_period=False,
+        warning_block = ""
+        if warning_lines:
+            warning_block = "Внимание:\n" + "\n".join(f"• {line}" for line in warning_lines) + "\n\n"
+
+        text = (
+            "Смена тарифа\n\n"
+            f"Текущий: {_get_plan_title(status)}\n"
+            f"Новый: {target_plan.title or format_device_count(target_plan.devices)}\n\n"
+            "Доплата не потребуется.\n"
+            f"Дата окончания не изменится: {status.expiry_date}\n\n"
+            f"{warning_block}"
+            "Подтвердить смену?"
         )
 
-        refreshed_status = await services.subscription.get_subscription_status(user)
-        refreshed_callback_data = SubscriptionData(
-            state=NavSubscription.PROCESS,
-            user_id=user.tg_id,
-            plan_code=refreshed_status.plan.code if refreshed_status.plan else "",
-        )
-        await show_subscription(
-            callback=callback,
-            user=user,
-            status=refreshed_status,
-            callback_data=refreshed_callback_data,
-            services=services,
-        )
-        await services.notification.show_popup(
-            callback=callback,
-            text="Тариф изменён. Доплата не потребовалась.",
+        callback_data.state = NavSubscription.CHANGE_APPLY
+        callback_data.devices = target_plan.devices
+        callback_data.duration = display_quote.renewal_duration_days
+        callback_data.plan_code = target_plan.code
+        callback_data.price = 0.0
+        callback_data.is_change = True
+        callback_data.is_extend = False
+        callback_data.is_upgrade = False
+
+        await callback.message.edit_text(
+            text=text,
+            reply_markup=change_apply_confirm_keyboard(callback_data),
         )
         return
 
@@ -518,6 +531,75 @@ async def callback_change_confirm(
             gateways=gateway_factory.get_gateways(),
             prices_by_callback=prices_by_callback,
         ),
+    )
+
+
+@router.callback_query(SubscriptionData.filter(F.state == NavSubscription.CHANGE_APPLY))
+async def callback_change_apply(
+    callback: CallbackQuery,
+    user: User,
+    callback_data: SubscriptionData,
+    config: Config,
+    services: ServicesContainer,
+) -> None:
+    logger.info(
+        "User %s confirmed plan change to %s (%s devices).",
+        user.tg_id,
+        callback_data.plan_code,
+        callback_data.devices,
+    )
+    target_plan = services.plan.get_plan_by_code(callback_data.plan_code)
+    if not target_plan:
+        await services.notification.show_popup(
+            callback=callback,
+            text=_("subscription:popup:error_fetching_plan"),
+        )
+        return
+
+    shop_currency = Currency.from_code(config.shop.CURRENCY)
+    display_quote = await services.subscription.get_upgrade_quote(
+        user=user, currency=shop_currency, target_plan=target_plan,
+    )
+    if not display_quote or display_quote.price != 0:
+        await services.notification.show_popup(
+            callback=callback,
+            text="Смена тарифа сейчас недоступна.",
+        )
+        return
+
+    success = await services.vpn.change_subscription(
+        user=user,
+        devices=target_plan.devices,
+    )
+    if not success:
+        await services.notification.show_popup(
+            callback=callback,
+            text="Не удалось изменить тариф.",
+        )
+        return
+
+    await services.subscription.update_current_plan(
+        user=user,
+        plan_code=target_plan.code,
+        refresh_period=False,
+    )
+
+    refreshed_status = await services.subscription.get_subscription_status(user)
+    refreshed_callback_data = SubscriptionData(
+        state=NavSubscription.PROCESS,
+        user_id=user.tg_id,
+        plan_code=refreshed_status.plan.code if refreshed_status.plan else "",
+    )
+    await show_subscription(
+        callback=callback,
+        user=user,
+        status=refreshed_status,
+        callback_data=refreshed_callback_data,
+        services=services,
+    )
+    await services.notification.show_popup(
+        callback=callback,
+        text="Тариф изменён.",
     )
 
 

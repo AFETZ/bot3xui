@@ -148,6 +148,9 @@ Before starting the installation, make sure you have the installed [**Docker**](
 | BOT_SUPPORT_ID | 🔴 | - | ID of the support person |
 | BOT_DOMAIN | 🔴 | - | Domain of the bot (e.g., 3xui-shop.com) |
 | BOT_PORT | ⭕ | 8080 | Port of the bot |
+| BOT_PROXY_URL | ⭕ | - | Optional SOCKS5 proxy for Telegram Bot API (e.g., socks5://127.0.0.1:10808) |
+| BOT_API_SERVER | ⭕ | - | Optional custom Telegram Bot API base URL |
+| BOT_USE_WEBHOOK | ⭕ | True | Enable webhook mode; set `False` for polling mode |
 | | | |
 | SHOP_EMAIL | ⭕ | support@3xui-shop.com | Email for receipts |
 | SHOP_CURRENCY | ⭕ | RUB | Currency for buttons (e.g., RUB, USD, XTR) |

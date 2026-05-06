@@ -60,6 +60,9 @@ class PaymentGateway(ABC):
     async def handle_payment_canceled(self, payment_id: str) -> None:
         pass
 
+    async def reconcile_pending_payment(self, payment_id: str) -> bool:
+        return False
+
     async def _on_payment_succeeded(self, payment_id: str) -> None:
         logger.info(f"Payment succeeded {payment_id}")
 
@@ -80,7 +83,13 @@ class PaymentGateway(ABC):
                 )
                 return
 
-            if transaction.status != TransactionStatus.PENDING:
+            if transaction.status == TransactionStatus.CANCELED:
+                logger.warning(
+                    "Payment %s was auto-canceled but webhook confirms success. "
+                    "Proceeding with subscription fulfillment.",
+                    payment_id,
+                )
+            elif transaction.status != TransactionStatus.PENDING:
                 logger.warning(
                     "Payment %s has unexpected status=%s. Skipping processing.",
                     payment_id,
@@ -92,12 +101,6 @@ class PaymentGateway(ABC):
             logger.debug(f"Subscription data unpacked: {data}")
             user = await User.get(session=session, tg_id=data.user_id)
 
-            await Transaction.update(
-                session=session,
-                payment_id=payment_id,
-                status=TransactionStatus.COMPLETED,
-            )
-
         if not user:
             logger.error(
                 "Cannot process successful payment %s: user %s not found.",
@@ -106,46 +109,15 @@ class PaymentGateway(ABC):
             )
             return
 
-        if self.config.shop.REFERRER_REWARD_ENABLED:
-            await self.services.referral.add_referrers_rewards_on_payment(
-                referred_tg_id=data.user_id,
-                payment_amount=data.price,  # TODO: (!) add currency unified processing
-                payment_id=payment_id,
-            )
-
-        resolved_plan_for_notify = self.services.subscription.get_payment_plan(
-            plan_code=data.plan_code,
-            devices=data.devices,
-        )
-        plan_label = resolved_plan_for_notify.title if resolved_plan_for_notify and resolved_plan_for_notify.title else ""
-
-        await self.services.notification.notify_developer(
-            text=EVENT_PAYMENT_SUCCEEDED_TAG
-            + "\n\n"
-            + _("payment:event:payment_succeeded").format(
-                payment_id=payment_id,
-                user_id=user.tg_id,
-                plan=plan_label,
-                devices=format_device_count(data.devices),
-                duration=format_subscription_period(data.duration),
-            ),
-        )
-
+        # Prepare locale for notification
         locale = user.language_code if user else DEFAULT_LANGUAGE
         with self.i18n.use_locale(locale):
-            await redirect_to_main_menu(
-                bot=self.bot,
-                user=user,
-                services=self.services,
-                config=self.config,
-                storage=self.storage,
-            )
-
             resolved_plan = self.services.subscription.get_payment_plan(
                 plan_code=data.plan_code,
                 devices=data.devices,
             )
 
+            success = False
             if data.is_upgrade:
                 if not data.plan_code:
                     logger.error(
@@ -168,68 +140,105 @@ class PaymentGateway(ABC):
                     user_id=user.tg_id,
                     plan_title=resolved_plan.title if resolved_plan else data.plan_code,
                 )
+                success = True
             elif data.is_extend:
                 success = await self.services.vpn.extend_subscription(
                     user=user,
                     devices=data.devices,
                     duration=data.duration,
                 )
-                if not success:
-                    logger.error("Failed to extend subscription for user %s after payment.", user.tg_id)
-                    return
-                if resolved_plan:
-                    await self.services.subscription.update_current_plan(
-                        user=user,
-                        plan_code=resolved_plan.code,
-                        refresh_period=True,
-                        period_duration_days=data.duration,
+                if success:
+                    if resolved_plan:
+                        await self.services.subscription.update_current_plan(
+                            user=user,
+                            plan_code=resolved_plan.code,
+                            refresh_period=True,
+                            period_duration_days=data.duration,
+                        )
+                    logger.info(f"Subscription extended for user {user.tg_id}")
+                    await self.services.notification.notify_extend_success(
+                        user_id=user.tg_id,
+                        data=data,
                     )
-                logger.info(f"Subscription extended for user {user.tg_id}")
-                await self.services.notification.notify_extend_success(
-                    user_id=user.tg_id,
-                    data=data,
-                )
             elif data.is_change:
                 success = await self.services.vpn.change_subscription(
                     user=user,
                     devices=data.devices,
                 )
-                if not success:
-                    logger.error("Failed to change subscription for user %s after payment.", user.tg_id)
-                    return
-                if resolved_plan:
-                    await self.services.subscription.update_current_plan(
-                        user=user,
-                        plan_code=resolved_plan.code,
-                        refresh_period=False,
+                if success:
+                    if resolved_plan:
+                        await self.services.subscription.update_current_plan(
+                            user=user,
+                            plan_code=resolved_plan.code,
+                            refresh_period=False,
+                        )
+                    logger.info(f"Subscription plan changed for user {user.tg_id}")
+                    await self.services.notification.notify_change_success(
+                        user_id=user.tg_id,
+                        data=data,
+                        plan_title=resolved_plan.title if resolved_plan else "",
                     )
-                logger.info(f"Subscription plan changed for user {user.tg_id}")
-                await self.services.notification.notify_change_success(
-                    user_id=user.tg_id,
-                    data=data,
-                    plan_title=resolved_plan.title if resolved_plan else "",
-                )
             else:
                 success = await self.services.vpn.create_subscription(
                     user=user,
                     devices=data.devices,
                     duration=data.duration,
                 )
-                if not success:
-                    logger.error("Failed to create subscription for user %s after payment.", user.tg_id)
-                    return
-                if resolved_plan:
-                    await self.services.subscription.update_current_plan(
-                        user=user,
-                        plan_code=resolved_plan.code,
-                        refresh_period=True,
-                        period_duration_days=data.duration,
+                if success:
+                    if resolved_plan:
+                        await self.services.subscription.update_current_plan(
+                            user=user,
+                            plan_code=resolved_plan.code,
+                            refresh_period=True,
+                            period_duration_days=data.duration,
+                        )
+                    logger.info(f"Subscription created for user {user.tg_id}")
+                    key = await self.services.vpn.get_key(user)
+                    await self.services.notification.notify_purchase_success(
+                        user_id=user.tg_id,
+                        key=key,
                     )
-                logger.info(f"Subscription created for user {user.tg_id}")
-                key = await self.services.vpn.get_key(user)
-                await self.services.notification.notify_purchase_success(
-                    user_id=user.tg_id,
-                    key=key,
+
+            if success:
+                async with self.session() as session:
+                    await Transaction.update(
+                        session=session,
+                        payment_id=payment_id,
+                        status=TransactionStatus.COMPLETED,
+                    )
+
+                if self.config.shop.REFERRER_REWARD_ENABLED:
+                    await self.services.referral.add_referrers_rewards_on_payment(
+                        referred_tg_id=data.user_id,
+                        payment_amount=data.price,
+                        payment_id=payment_id,
+                    )
+
+                plan_label = resolved_plan.title if resolved_plan and resolved_plan.title else ""
+                await self.services.notification.notify_developer(
+                    text=EVENT_PAYMENT_SUCCEEDED_TAG
+                    + "\n\n"
+                    + _("payment:event:payment_succeeded").format(
+                        payment_id=payment_id,
+                        user_id=user.tg_id,
+                        plan=plan_label,
+                        devices=format_device_count(data.devices),
+                        duration=format_subscription_period(data.duration),
+                    ),
+                )
+
+                await redirect_to_main_menu(
+                    bot=self.bot,
+                    user=user,
+                    services=self.services,
+                    config=self.config,
+                    storage=self.storage,
+                )
+            else:
+                logger.error(
+                    "Failed to process subscription for user %s after payment %s.",
+                    user.tg_id,
+                    payment_id,
                 )
 
     async def _on_payment_canceled(self, payment_id: str) -> None:

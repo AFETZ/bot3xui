@@ -4,6 +4,8 @@ from sqlalchemy.ext.asyncio import async_sessionmaker
 from app.bot.models import ServicesContainer
 from app.config import Config
 
+from .admin_statistics import AdminStatisticsService
+from .admin_users import AdminUserService
 from .invite_stats import InviteStatsService
 from .notification import NotificationService
 from .payment_stats import PaymentStatsService
@@ -32,6 +34,15 @@ async def initialize(
     )
     payment_stats = PaymentStatsService(session_factory=session)
     invite_stats = InviteStatsService(session_factory=session, payment_stats_service=payment_stats)
+    admin_statistics = AdminStatisticsService(
+        session_factory=session,
+        payment_stats_service=payment_stats,
+    )
+    admin_users = AdminUserService(
+        session_factory=session,
+        subscription_service=subscription,
+        payment_stats_service=payment_stats,
+    )
 
     return ServicesContainer(
         server_pool=server_pool,
@@ -42,4 +53,6 @@ async def initialize(
         subscription=subscription,
         payment_stats=payment_stats,
         invite_stats=invite_stats,
+        admin_statistics=admin_statistics,
+        admin_users=admin_users,
     )

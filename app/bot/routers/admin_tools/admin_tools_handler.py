@@ -1,12 +1,15 @@
 import logging
 
-from aiogram import F, Router
-from aiogram.types import CallbackQuery
+from aiogram import Bot, F, Router
+from aiogram.types import CallbackQuery, InlineKeyboardButton, InlineKeyboardMarkup
 from aiogram.utils.i18n import gettext as _
+from aiogram.utils.keyboard import InlineKeyboardBuilder
 
 from app.bot.filters import IsAdmin, IsDev
+from app.bot.models import SubscriptionData
+from app.bot.payment_gateways import GatewayFactory
 from app.bot.services import ServicesContainer
-from app.bot.utils.navigation import NavAdminTools
+from app.bot.utils.navigation import NavAdminTools, NavSubscription
 from app.db.models import User
 
 from .keyboard import admin_tools_keyboard
@@ -70,3 +73,48 @@ async def callback_admin_tools(
     # logger.info(f"{transaction}\n\n{transaction.user}")
 
     # logger.info(server.current_clients)
+
+
+@router.callback_query(F.data == NavAdminTools.TEST_PURCHASE, IsAdmin())
+async def callback_test_purchase(
+    callback: CallbackQuery,
+    user: User,
+    gateway_factory: GatewayFactory,
+) -> None:
+    logger.info(f"Admin {user.tg_id} initiated test purchase.")
+
+    try:
+        gateway = gateway_factory.get_gateway(NavSubscription.PAY_YOOKASSA)
+    except ValueError:
+        await callback.answer("YooKassa не подключена", show_alert=True)
+        return
+
+    data = SubscriptionData(
+        state=NavSubscription.PAY_YOOKASSA,
+        user_id=user.tg_id,
+        devices=5,
+        duration=30,
+        price=10,
+        plan_code="p5wl",
+    )
+
+    try:
+        pay_url = await gateway.create_payment(data)
+    except Exception as e:
+        logger.error(f"Test purchase payment creation failed: {e}")
+        await callback.answer("Ошибка создания платежа", show_alert=True)
+        return
+
+    builder = InlineKeyboardBuilder()
+    builder.row(InlineKeyboardButton(text="Оплатить 10₽", url=pay_url))
+    builder.row(InlineKeyboardButton(text="Назад", callback_data=NavAdminTools.MAIN))
+
+    await callback.message.edit_text(
+        text=(
+            "Тестовая покупка:\n\n"
+            "Тариф: 5 устройств + обход белых списков\n"
+            "Срок: 30 дней\n"
+            "Цена: 10 ₽"
+        ),
+        reply_markup=builder.as_markup(),
+    )

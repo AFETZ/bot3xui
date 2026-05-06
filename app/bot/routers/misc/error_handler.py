@@ -22,9 +22,18 @@ async def errors_handler(event: ErrorEvent, config: Config, services: ServicesCo
         return True
 
     if isinstance(event.exception, TelegramBadRequest):
-        logger.warning(
-            f"User {event.update.callback_query.from_user.id} bad request for edit/send message."
-        )
+        if event.update.callback_query:
+            user_id = event.update.callback_query.from_user.id
+            logger.warning(f"User {user_id} bad request for edit/send message.")
+            try:
+                await event.update.callback_query.answer(
+                    text="⚠️ Нажмите кнопку «📋 Меню» внизу чата",
+                    show_alert=True,
+                )
+            except Exception:
+                pass
+        else:
+            logger.warning(f"TelegramBadRequest: {event.exception}")
         return True
 
     logger.exception(f"Update: {event.update}\nException: {event.exception}")

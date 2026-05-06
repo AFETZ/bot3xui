@@ -4,6 +4,8 @@ from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from app.bot.services import (
+        AdminStatisticsService,
+        AdminUserService,
         NotificationService,
         PlanService,
         ServerPoolService,
@@ -27,3 +29,5 @@ class ServicesContainer:
     subscription: SubscriptionService
     payment_stats: PaymentStatsService
     invite_stats: InviteStatsService
+    admin_statistics: AdminStatisticsService
+    admin_users: AdminUserService

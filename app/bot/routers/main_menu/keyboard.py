@@ -1,4 +1,4 @@
-from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
+from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup, KeyboardButton, ReplyKeyboardMarkup
 from aiogram.utils.i18n import gettext as _
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 
@@ -9,6 +9,16 @@ from app.bot.utils.navigation import (
     NavSubscription,
     NavSupport,
 )
+
+MENU_BUTTON_TEXT = "📋 Меню"
+
+
+def menu_reply_keyboard() -> ReplyKeyboardMarkup:
+    return ReplyKeyboardMarkup(
+        keyboard=[[KeyboardButton(text=MENU_BUTTON_TEXT)]],
+        resize_keyboard=True,
+        is_persistent=True,
+    )
 
 
 def main_menu_keyboard(
@@ -58,6 +68,12 @@ def main_menu_keyboard(
             text=_("main_menu:button:support"),
             callback_data=NavSupport.MAIN,
         ),
+    )
+    builder.row(
+        InlineKeyboardButton(
+            text=_("main_menu:button:news_channel"),
+            url="https://t.me/AFetZEA",
+        )
     )
 
     if is_admin:

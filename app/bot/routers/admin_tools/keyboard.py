@@ -8,6 +8,7 @@ from app.bot.routers.misc.keyboard import (
     cancel_button,
 )
 from app.bot.utils.navigation import NavAdminTools
+from app.bot.models import AdminUserEditorOverview, AdminUserListPage
 from app.db.models import Server
 from app.db.models.invite import Invite
 
@@ -77,6 +78,12 @@ def admin_tools_keyboard(is_dev: bool) -> InlineKeyboardMarkup:
         InlineKeyboardButton(
             text=_("admin_tools:button:test_button"),
             callback_data=NavAdminTools.TEST,
+        )
+    )
+    builder.row(
+        InlineKeyboardButton(
+            text="Тестовая покупка (10₽)",
+            callback_data=NavAdminTools.TEST_PURCHASE,
         )
     )
 
@@ -412,12 +419,18 @@ def invite_details_keyboard(invite: Invite) -> InlineKeyboardMarkup:
     return builder.as_markup()
 
 
-def user_editor_keyboard() -> InlineKeyboardMarkup:
+def user_editor_keyboard(
+    overview: AdminUserEditorOverview | None = None,
+) -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
+    total_suffix = f" ({overview.total_users})" if overview else ""
+    paid_suffix = f" ({overview.paid_users})" if overview else ""
+    trial_suffix = f" ({overview.trial_users})" if overview else ""
+    inactive_suffix = f" ({overview.inactive_users})" if overview else ""
 
     builder.row(
         InlineKeyboardButton(
-            text=_("user_editor:button:list_users"),
+            text=_("user_editor:button:list_users") + total_suffix,
             callback_data=NavAdminTools.USER_LIST,
         )
     )
@@ -429,11 +442,17 @@ def user_editor_keyboard() -> InlineKeyboardMarkup:
     )
     builder.row(
         InlineKeyboardButton(
-            text=_("user_editor:button:active_users"),
-            callback_data=NavAdminTools.USER_ACTIVE_FILTER,
+            text=_("user_editor:button:paid_users") + paid_suffix,
+            callback_data=NavAdminTools.USER_PAID_FILTER,
         ),
         InlineKeyboardButton(
-            text=_("user_editor:button:inactive_users"),
+            text=_("user_editor:button:trial_users") + trial_suffix,
+            callback_data=NavAdminTools.USER_TRIAL_FILTER,
+        ),
+    )
+    builder.row(
+        InlineKeyboardButton(
+            text=_("user_editor:button:inactive_users") + inactive_suffix,
             callback_data=NavAdminTools.USER_INACTIVE_FILTER,
         ),
     )
@@ -444,39 +463,43 @@ def user_editor_keyboard() -> InlineKeyboardMarkup:
 
 
 def user_list_keyboard(
-    users: list, page: int = 0, limit: int = 8, filter_type: str = "all"
+    user_page: AdminUserListPage,
 ) -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
-    total_users = len(users)
-    start_idx = page * limit
-    end_idx = min(start_idx + limit, total_users)
 
-    for i in range(start_idx, end_idx):
-        u = users[i]
-        username = f"@{u.username}" if u.username else u.first_name
-        has_sub = "+" if u.current_plan_code else "—"
-        label = f"[{has_sub}] {username} ({u.tg_id})"
+    for item in user_page.items:
+        if item.has_paid:
+            marker = "💳"
+        elif item.current_plan_code:
+            marker = "🎁"
+        else:
+            marker = "—"
+        label = f"[{marker}] {item.display_name} ({item.tg_id})"
         builder.row(
             InlineKeyboardButton(
                 text=label,
-                callback_data=NavAdminTools.USER_DETAILS + f"_{u.tg_id}",
+                callback_data=NavAdminTools.USER_DETAILS + f"_{item.tg_id}",
             )
         )
 
     nav_row = []
-    if page > 0:
+    if user_page.page > 0:
         nav_row.append(
             InlineKeyboardButton(
                 text=_("user_editor:button:prev_page"),
-                callback_data=NavAdminTools.USER_LIST_PAGE + f"_{filter_type}_{page - 1}",
+                callback_data=(
+                    NavAdminTools.USER_LIST_PAGE + f"_{user_page.filter_type}_{user_page.page - 1}"
+                ),
             )
         )
 
-    if (page + 1) * limit < total_users:
+    if user_page.page + 1 < user_page.pages:
         nav_row.append(
             InlineKeyboardButton(
                 text=_("user_editor:button:next_page"),
-                callback_data=NavAdminTools.USER_LIST_PAGE + f"_{filter_type}_{page + 1}",
+                callback_data=(
+                    NavAdminTools.USER_LIST_PAGE + f"_{user_page.filter_type}_{user_page.page + 1}"
+                ),
             )
         )
 
@@ -503,18 +526,37 @@ def user_details_keyboard(tg_id: int) -> InlineKeyboardMarkup:
         )
     )
 
-    builder.row(back_button(NavAdminTools.USER_LIST))
+    builder.row(back_button(NavAdminTools.USER_BACK))
     builder.row(back_button(NavAdminTools.USER_EDITOR, _("user_editor:button:back_to_editor")))
     return builder.as_markup()
 
 
-def statistics_keyboard() -> InlineKeyboardMarkup:
+def statistics_keyboard(period_code: str = "7d") -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
 
     builder.row(
         InlineKeyboardButton(
+            text=("• " if period_code == "today" else "") + _("statistics:button:today"),
+            callback_data=NavAdminTools.STATISTICS_PERIOD + "_today",
+        ),
+        InlineKeyboardButton(
+            text=("• " if period_code == "7d" else "") + _("statistics:button:7d"),
+            callback_data=NavAdminTools.STATISTICS_PERIOD + "_7d",
+        ),
+        InlineKeyboardButton(
+            text=("• " if period_code == "30d" else "") + _("statistics:button:30d"),
+            callback_data=NavAdminTools.STATISTICS_PERIOD + "_30d",
+        ),
+        InlineKeyboardButton(
+            text=("• " if period_code == "all" else "") + _("statistics:button:all"),
+            callback_data=NavAdminTools.STATISTICS_PERIOD + "_all",
+        ),
+    )
+
+    builder.row(
+        InlineKeyboardButton(
             text=_("statistics:button:refresh"),
-            callback_data=NavAdminTools.STATISTICS,
+            callback_data=NavAdminTools.STATISTICS_PERIOD + f"_{period_code}",
         )
     )
 

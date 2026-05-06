@@ -10,14 +10,29 @@ from app.bot.utils.constants import UNLIMITED, Currency
 logger = logging.getLogger(__name__)
 
 
+def _safe_gettext(message: str) -> str:
+    try:
+        return _(message)
+    except LookupError:
+        return message
+
+
 def format_size(size_bytes: int) -> str:
     try:
         if size_bytes == -1:
             return UNLIMITED
         if size_bytes == 0:
-            return f"0 {_('MB')}"
+            return f"0 {_safe_gettext('MB')}"
 
-        size_units = [_("MB"), _("GB"), _("TB"), _("PB"), _("EB"), _("ZB"), _("YB")]
+        size_units = [
+            _safe_gettext("MB"),
+            _safe_gettext("GB"),
+            _safe_gettext("TB"),
+            _safe_gettext("PB"),
+            _safe_gettext("EB"),
+            _safe_gettext("ZB"),
+            _safe_gettext("YB"),
+        ]
         size_in_mb = max(size_bytes / 1024**2, 1)
         i = min(int(math.log(size_in_mb, 1024)), len(size_units) - 1)
         s = round(size_in_mb / (1024**i), 2)
@@ -25,7 +40,7 @@ def format_size(size_bytes: int) -> str:
         return f"{int(s) if s.is_integer() else s} {size_units[i]}"
     except Exception as exception:
         logger.error(f"Error converting size: {exception}")
-        return f"0 {_('MB')}"
+        return "0 MB"
 
 
 def format_remaining_time(timestamp: int) -> str:

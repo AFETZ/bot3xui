@@ -2,12 +2,20 @@
 Revert incorrectly migrated paid users back to their correct plan.
 Only users who have completed transactions (i.e., paid users) will be reverted.
 Users with no transactions remain on p3wl (actual trial users).
+
+Usage:
+    docker exec -it 3xui-shop-bot poetry run python /app/revert_trial_migration.py --user-id 123 --user-id 456
+    docker exec -it 3xui-shop-bot poetry run python /app/revert_trial_migration.py --users-file /app/tmp/migrated_users.txt
+
+Alternatively, provide comma-separated Telegram IDs via MIGRATED_USERS.
 """
 
 import asyncio
+import argparse
 import logging
-import sys
 import os
+import sys
+from pathlib import Path
 
 sys.path.insert(0, os.path.dirname(__file__))
 
@@ -21,13 +29,61 @@ from app.bot.models import SubscriptionData
 logging.basicConfig(level=logging.INFO, format="%(asctime)s | %(levelname)s | %(message)s")
 logger = logging.getLogger(__name__)
 
-MIGRATED_USERS = [
-    88019797, 8544768534, 1139776540, 1497941362, 8341832184,
-    572618070, 7907401352, 339358590, 609110006, 2124136006, 383925544,
-]
+
+def _parse_user_ids(raw_values: list[str]) -> list[int]:
+    user_ids: list[int] = []
+
+    for raw_value in raw_values:
+        for chunk in raw_value.replace("\n", ",").split(","):
+            value = chunk.strip()
+            if not value:
+                continue
+            if not value.isdigit():
+                raise ValueError(f"Invalid Telegram user ID: {value}")
+            user_ids.append(int(value))
+
+    # Preserve order but remove duplicates.
+    return list(dict.fromkeys(user_ids))
+
+
+def _load_target_user_ids() -> list[int]:
+    parser = argparse.ArgumentParser(
+        description="Revert incorrectly migrated paid users back to their original plan."
+    )
+    parser.add_argument(
+        "--user-id",
+        action="append",
+        default=[],
+        help="Telegram user ID to revert. May be passed multiple times.",
+    )
+    parser.add_argument(
+        "--users-file",
+        help="Path to a file with Telegram user IDs separated by commas or new lines.",
+    )
+    args = parser.parse_args()
+
+    raw_values = list(args.user_id)
+
+    env_user_ids = os.getenv("MIGRATED_USERS", "").strip()
+    if env_user_ids:
+        raw_values.append(env_user_ids)
+
+    if args.users_file:
+        raw_values.append(Path(args.users_file).read_text(encoding="utf-8"))
+
+    try:
+        user_ids = _parse_user_ids(raw_values)
+    except ValueError as exc:
+        parser.error(str(exc))
+
+    if not user_ids:
+        parser.error("No user IDs provided. Use --user-id, --users-file, or MIGRATED_USERS.")
+
+    return user_ids
 
 
 async def main() -> None:
+    target_user_ids = _load_target_user_ids()
     config = load_config()
     engine = create_async_engine(config.database.url())
     session_factory = async_sessionmaker(engine, expire_on_commit=False)
@@ -39,7 +95,9 @@ async def main() -> None:
     vpn_service = VPNService(config=config, session=session_factory, server_pool_service=server_pool)
     await server_pool.sync_servers()
 
-    for tg_id in MIGRATED_USERS:
+    logger.info("Loaded %d user IDs for revert.", len(target_user_ids))
+
+    for tg_id in target_user_ids:
         async with session_factory() as session:
             user = await User.get(session=session, tg_id=tg_id)
             if not user:
@@ -59,10 +117,10 @@ async def main() -> None:
             transaction = result.scalar_one_or_none()
 
         if not transaction:
-            logger.info(f"User {tg_id}: no paid transactions — genuine trial user, keeping p3wl.")
+            logger.info(f"User {tg_id}: no paid transactions - genuine trial user, keeping p3wl.")
             continue
 
-        # This is a paid user — restore their plan from the transaction
+        # This is a paid user - restore their plan from the transaction.
         try:
             data = SubscriptionData.unpack(transaction.subscription)
             original_plan_code = data.plan_code
@@ -72,11 +130,13 @@ async def main() -> None:
             continue
 
         if not original_plan_code:
-            logger.warning(f"User {tg_id}: transaction has no plan_code, devices={original_devices}. Restoring devices only.")
+            logger.warning(
+                f"User {tg_id}: transaction has no plan_code, devices={original_devices}. Restoring devices only."
+            )
             original_plan_code = f"p{original_devices}"
 
         logger.info(
-            f"User {tg_id}: PAID user — reverting to plan={original_plan_code}, devices={original_devices}"
+            f"User {tg_id}: paid user - reverting to plan={original_plan_code}, devices={original_devices}"
         )
 
         # Update DB

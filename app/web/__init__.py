@@ -1,1 +1,2 @@
 from .additional_profile import setup_additional_profile_route
+from .primary_profile import setup_primary_profile_route

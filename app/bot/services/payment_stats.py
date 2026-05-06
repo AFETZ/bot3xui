@@ -1,4 +1,5 @@
 import logging
+from datetime import datetime
 from typing import Dict, Optional
 
 from sqlalchemy import select
@@ -29,6 +30,7 @@ class PaymentStatsService:
         user_id: int,
         session: Optional[AsyncSession] = None,
         payment_method_currencies: Optional[Dict[str, str]] = None,
+        since: datetime | None = None,
     ) -> Dict[str, float]:
         """
         Calculate total payments by currency for a specific user using transactions table.
@@ -37,6 +39,7 @@ class PaymentStatsService:
             user_id: Telegram user ID
             session: Optional existing database session
             payment_method_currencies: Dictionary mapping payment methods to currency codes
+            since: Optional lower bound for completed transaction creation time
 
         Returns:
             Dict mapping currency codes to total amounts
@@ -44,11 +47,13 @@ class PaymentStatsService:
 
         async def _get_stats(s: AsyncSession) -> Dict[str, float]:
             # Get completed transactions for this user
-            query = await s.execute(
-                select(Transaction).where(
-                    Transaction.tg_id == user_id, Transaction.status == TransactionStatus.COMPLETED
-                )
+            query_stmt = select(Transaction).where(
+                Transaction.tg_id == user_id,
+                Transaction.status == TransactionStatus.COMPLETED,
             )
+            if since is not None:
+                query_stmt = query_stmt.where(Transaction.created_at >= since)
+            query = await s.execute(query_stmt)
             transactions = query.scalars().all()
 
             results = {}
@@ -93,6 +98,7 @@ class PaymentStatsService:
         self,
         session: Optional[AsyncSession] = None,
         payment_method_currencies: Optional[Dict[str, str]] = None,
+        since: datetime | None = None,
     ) -> Dict[str, float]:
         """
         Calculate total revenue across all completed transactions by currency.
@@ -100,15 +106,17 @@ class PaymentStatsService:
         Args:
             session: Optional existing database session
             payment_method_currencies: Dictionary mapping payment methods to currency codes
+            since: Optional lower bound for completed transaction creation time
 
         Returns:
             Dict mapping currency codes to total amounts
         """
 
         async def _get_stats(s: AsyncSession) -> Dict[str, float]:
-            query = await s.execute(
-                select(Transaction).where(Transaction.status == TransactionStatus.COMPLETED)
-            )
+            query_stmt = select(Transaction).where(Transaction.status == TransactionStatus.COMPLETED)
+            if since is not None:
+                query_stmt = query_stmt.where(Transaction.created_at >= since)
+            query = await s.execute(query_stmt)
             transactions = query.scalars().all()
 
             results = {}

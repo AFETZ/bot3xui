@@ -177,6 +177,9 @@ class SubscriptionService:
     def get_additional_profile_url(self, user: User) -> str:
         return f"{self.config.bot.DOMAIN}/wl/{user.vpn_id}"
 
+    async def get_upstream_profile_url(self, user: User) -> str | None:
+        return await self.vpn_service.get_upstream_key(user)
+
     def can_upgrade_plan(self, status: SubscriptionStatus) -> bool:
         if not status.is_active or not status.plan or status.plan.includes_additional_profile:
             return False

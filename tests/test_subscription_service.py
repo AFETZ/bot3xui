@@ -25,22 +25,38 @@ class FakePlanService:
     def __init__(self, plans):
         self._plans = plans
         self._plans_by_code = {plan.code: plan for plan in plans}
+        self._public_plans_by_offer_key = {}
+        for plan in plans:
+            if plan.is_public:
+                self._public_plans_by_offer_key.setdefault(plan.commercial_key, plan)
 
     def get_durations(self):
         return [30, 60, 180, 365]
 
-    def get_plan(self, devices):
-        return next(
-            (
-                plan
-                for plan in self._plans
-                if plan.devices == devices and plan.is_public
-            ),
-            None,
-        )
+    def get_plan(self, devices, *, includes_additional_profile=False):
+        return self._public_plans_by_offer_key.get((devices, includes_additional_profile))
 
     def get_plan_by_code(self, code):
         return self._plans_by_code.get(code)
+
+    def get_public_plan_equivalent(self, plan):
+        if isinstance(plan, str):
+            plan = self.get_plan_by_code(plan)
+        if not plan:
+            return None
+        if plan.is_public:
+            return plan
+        return self._public_plans_by_offer_key.get(plan.commercial_key)
+
+    def get_all_plans(self, *, prefer_additional_profile=False):
+        return sorted(
+            self._public_plans_by_offer_key.values(),
+            key=lambda plan: (
+                0 if plan.includes_additional_profile == prefer_additional_profile else 1,
+                plan.devices,
+                plan.code,
+            ),
+        )
 
     def get_upgrade_plan(self, current_plan):
         if isinstance(current_plan, str):
@@ -58,14 +74,27 @@ class FakePlanService:
         if not current_plan:
             return []
 
-        current_price = current_plan.get_price(currency=currency, duration=duration)
-        return [
-            plan
-            for plan in self._plans
-            if plan.is_public
-            and plan.code != current_plan.code
-            and plan.get_price(currency=currency, duration=duration) > current_price
-        ]
+        current_public_plan = self.get_public_plan_equivalent(current_plan)
+        current_offer_key = (
+            current_public_plan.commercial_key
+            if current_public_plan is not None
+            else current_plan.commercial_key
+        )
+
+        result = []
+        currency_code = currency.code if hasattr(currency, "code") else str(currency)
+        for plan in self.get_all_plans():
+            if plan.commercial_key == current_offer_key:
+                continue
+            if currency_code not in plan.prices:
+                continue
+            if duration not in plan.prices[currency_code] and not any(
+                available_duration in plan.prices[currency_code]
+                for available_duration in plan.get_available_durations(self.get_durations())
+            ):
+                continue
+            result.append(plan)
+        return result
 
 
 @pytest.fixture
@@ -111,6 +140,73 @@ def subscription_service(plan_set):
     config = SimpleNamespace(bot=SimpleNamespace(DOMAIN="https://bot.example"))
     vpn_service = SimpleNamespace(get_client_data=AsyncMock())
     plan_service = FakePlanService(plan_set)
+    return SubscriptionService(
+        config=config,
+        session_factory=lambda: DummySessionContext(),
+        vpn_service=vpn_service,
+        plan_service=plan_service,
+    )
+
+
+@pytest.fixture
+def alias_plan_set():
+    return (
+        Plan(
+            code="p1",
+            devices=1,
+            title="1 устройство",
+            prices={"RUB": {30: 299}},
+        ),
+        Plan(
+            code="p1wl",
+            devices=1,
+            title="1 устройство + БС",
+            includes_additional_profile=True,
+            prices={"RUB": {30: 449}},
+        ),
+        Plan(
+            code="p3",
+            devices=3,
+            title="3 устройства",
+            prices={"RUB": {30: 349}},
+        ),
+        Plan(
+            code="p3wl",
+            devices=3,
+            title="3 устройства + БС",
+            includes_additional_profile=True,
+            prices={"RUB": {30: 549}},
+        ),
+        Plan(
+            code="p3a",
+            devices=3,
+            title="3 устройства + БС",
+            is_public=False,
+            includes_additional_profile=True,
+            upgrade_from="p3",
+            prices={"RUB": {30: 549}},
+        ),
+        Plan(
+            code="p5",
+            devices=5,
+            title="5 устройств",
+            prices={"RUB": {30: 449}},
+        ),
+        Plan(
+            code="p5wl",
+            devices=5,
+            title="5 устройств + БС",
+            includes_additional_profile=True,
+            prices={"RUB": {30: 599}},
+        ),
+    )
+
+
+@pytest.fixture
+def alias_subscription_service(alias_plan_set):
+    config = SimpleNamespace(bot=SimpleNamespace(DOMAIN="https://bot.example"))
+    vpn_service = SimpleNamespace(get_client_data=AsyncMock())
+    plan_service = FakePlanService(alias_plan_set)
     return SubscriptionService(
         config=config,
         session_factory=lambda: DummySessionContext(),
@@ -313,6 +409,53 @@ async def test_get_plan_change_quotes_keep_zero_price_options(
 
 
 @pytest.mark.asyncio
+async def test_get_plan_change_quotes_include_base_public_tariffs_for_hidden_wl_alias(
+    monkeypatch,
+    alias_subscription_service,
+    alias_plan_set,
+):
+    _, _, three_devices, _, hidden_three_devices_wl, five_devices, five_devices_wl = alias_plan_set
+    user = SimpleNamespace(tg_id=104, vpn_id="vpn-104")
+    expiry_timestamp = 15 * 24 * 60 * 60 * 1000
+    status = SubscriptionStatus(
+        user=user,
+        client_data=ClientData(
+            max_devices=3,
+            traffic_total=0,
+            traffic_remaining=0,
+            traffic_used=0,
+            traffic_up=0,
+            traffic_down=0,
+            expiry_time=expiry_timestamp,
+        ),
+        plan=hidden_three_devices_wl,
+        is_active=True,
+        status_check_ok=True,
+        period_duration_days=30,
+        expiry_timestamp=expiry_timestamp,
+    )
+
+    monkeypatch.setattr(
+        "app.bot.services.subscription.get_current_timestamp",
+        lambda: 0,
+    )
+    alias_subscription_service.get_subscription_status = AsyncMock(return_value=status)
+
+    quotes = await alias_subscription_service.get_plan_change_quotes(
+        user=user,
+        currency=Currency.RUB,
+    )
+    quote_by_code = {quote.target_plan.code: quote for quote in quotes}
+
+    assert three_devices.code in quote_by_code
+    assert quote_by_code[three_devices.code].price == 0
+    assert "p3wl" not in quote_by_code
+    assert hidden_three_devices_wl.code not in quote_by_code
+    assert five_devices.code in quote_by_code
+    assert five_devices_wl.code in quote_by_code
+
+
+@pytest.mark.asyncio
 async def test_has_additional_profile_access_checks_entitlement(subscription_service, plan_set):
     _, upgraded_plan, _ = plan_set
     user = SimpleNamespace(tg_id=7)
@@ -369,4 +512,20 @@ async def test_get_subscription_status_by_vpn_id_returns_user_and_status(
 def test_get_additional_profile_url_uses_domain_and_vpn_id(subscription_service):
     user = SimpleNamespace(vpn_id="vpn-500")
 
-    assert subscription_service.get_additional_profile_url(user) == "https://bot.example/wl/vpn-500"
+    assert (
+        subscription_service.get_additional_profile_url(user)
+        == "https://bot.example/wl/vpn-500"
+    )
+
+
+@pytest.mark.asyncio
+async def test_get_upstream_profile_url_uses_vpn_service(subscription_service):
+    user = SimpleNamespace(vpn_id="vpn-500")
+    subscription_service.vpn_service.get_upstream_key = AsyncMock(
+        return_value="https://xui.example/sub/vpn-500"
+    )
+
+    assert (
+        await subscription_service.get_upstream_profile_url(user)
+        == "https://xui.example/sub/vpn-500"
+    )

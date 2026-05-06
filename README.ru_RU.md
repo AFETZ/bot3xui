@@ -148,6 +148,9 @@
 | BOT_SUPPORT_ID | 🔴 | - | ID пользователя, отвечающего за поддержку |
 | BOT_DOMAIN | 🔴 | - | Домен вашего бота (например, 3xui-shop.com) |
 | BOT_PORT | ⭕ | 8080 | Порт, используемый ботом |
+| BOT_PROXY_URL | ⭕ | - | Необязательный SOCKS5-прокси для Telegram Bot API (например, socks5://127.0.0.1:10808) |
+| BOT_API_SERVER | ⭕ | - | Необязательный базовый URL кастомного Telegram Bot API |
+| BOT_USE_WEBHOOK | ⭕ | True | Включить webhook-режим; установите `False` для polling-режима |
 | | | |
 | SHOP_EMAIL | ⭕ | support@3xui-shop.com | Email для отправки чеков |
 | SHOP_CURRENCY | ⭕ | RUB | Валюта для кнопок (например, RUB, USD, XTR) |

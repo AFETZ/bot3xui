@@ -1,12 +1,16 @@
+import base64
+import json
+from urllib.parse import urlencode
+
 from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 from aiogram.utils.i18n import gettext as _
 from aiogram.utils.keyboard import InlineKeyboardBuilder
-from urllib.parse import urlencode
 
 from app.bot.routers.misc.keyboard import back_button, back_to_main_menu_button
 from app.bot.utils.constants import (
     APP_ANDROID_LINK,
     APP_ANDROID_SCHEME,
+    APP_HAPP_ROUTING_SCHEME,
     APP_IOS_LINK,
     APP_IOS_SCHEME,
     APP_WINDOWS_LINK,
@@ -19,6 +23,50 @@ from app.bot.utils.navigation import NavDownload, NavMain, NavSubscription, NavS
 def build_connect_url(url: str, scheme: str, key: str, platform_param: str) -> str:
     connect_params = urlencode({"scheme": scheme, "key": key, "platform": platform_param})
     return f"{url}{CONNECTION_WEBHOOK}?{connect_params}"
+
+
+def build_happ_routing_base64() -> str:
+    profile = {
+        "Name": "SuperBebra RU Direct",
+        "GlobalProxy": "true",
+        "RemoteDNSType": "DoH",
+        "RemoteDNSDomain": "https://cloudflare-dns.com/dns-query",
+        "RemoteDNSIP": "1.1.1.1",
+        "DomesticDNSType": "DoH",
+        "DomesticDNSDomain": "https://dns.google/dns-query",
+        "DomesticDNSIP": "8.8.8.8",
+        "Geoipurl": (
+            "https://github.com/Loyalsoldier/v2ray-rules-dat/releases/latest/download/geoip.dat"
+        ),
+        "Geositeurl": (
+            "https://github.com/Loyalsoldier/v2ray-rules-dat/releases/latest/download/geosite.dat"
+        ),
+        "LastUpdated": "",
+        "DnsHosts": {},
+        "DirectSites": ["geosite:CATEGORY-RU"],
+        "DirectIp": [
+            "geoip:RU",
+            "10.0.0.0/8",
+            "172.16.0.0/12",
+            "192.168.0.0/16",
+            "169.254.0.0/16",
+            "224.0.0.0/4",
+            "255.255.255.255",
+        ],
+        "DomainStrategy": "IPIfNonMatch",
+        "FakeDNS": "false",
+    }
+    raw = json.dumps(profile, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
+    return base64.b64encode(raw).decode("ascii")
+
+
+def build_happ_routing_connection_url(url: str, platform_param: str) -> str:
+    return build_connect_url(
+        url=url,
+        scheme=APP_HAPP_ROUTING_SCHEME,
+        key=build_happ_routing_base64(),
+        platform_param=platform_param,
+    )
 
 
 def platforms_keyboard(previous_callback: str = None) -> InlineKeyboardMarkup:
@@ -70,7 +118,16 @@ def download_keyboard(
             download = APP_WINDOWS_LINK
             platform_param = "windows"
 
-    connect = build_connect_url(url=url, scheme=scheme, key=key, platform_param=platform_param) if key else None
+    connect = (
+        build_connect_url(url=url, scheme=scheme, key=key, platform_param=platform_param)
+        if key
+        else None
+    )
+    routing_connect = (
+        build_happ_routing_connection_url(url=url, platform_param=platform_param)
+        if key
+        else None
+    )
     additional_connect = (
         build_connect_url(
             url=url,
@@ -89,6 +146,13 @@ def download_keyboard(
             callback_data=NavSubscription.MAIN if not key else None,
         )
     )
+    if routing_connect:
+        builder.row(
+            InlineKeyboardButton(
+                text=_("download:button:setup_ru_direct"),
+                url=routing_connect,
+            )
+        )
     builder.row(
         InlineKeyboardButton(
             text=_("download:button:connect_additional_profile"),

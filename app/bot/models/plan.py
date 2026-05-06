@@ -15,6 +15,16 @@ class Plan:
     is_public: bool = True
     includes_additional_profile: bool = False
     upgrade_from: str | None = None
+    is_popular: bool = False
+
+    @property
+    def commercial_key(self) -> tuple[int, bool]:
+        return (self.devices, self.includes_additional_profile)
+
+    def same_commercial_offer(self, other: "Plan | None") -> bool:
+        if other is None:
+            return False
+        return self.commercial_key == other.commercial_key
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> "Plan":
@@ -29,6 +39,7 @@ class Plan:
             is_public=data.get("is_public", True),
             includes_additional_profile=data.get("includes_additional_profile", False),
             upgrade_from=data.get("upgrade_from"),
+            is_popular=data.get("is_popular", False),
         )
 
     def to_dict(self) -> dict[str, Any]:
@@ -41,6 +52,7 @@ class Plan:
             "is_public": self.is_public,
             "includes_additional_profile": self.includes_additional_profile,
             "upgrade_from": self.upgrade_from,
+            "is_popular": self.is_popular,
         }
 
     def get_price(self, currency: Currency | str, duration: int) -> float:

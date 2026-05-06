@@ -181,7 +181,7 @@ class VPNService:
     async def get_client_data(self, user: User, raise_on_error: bool = False) -> ClientData | None:
         return await self._get_client_data(user=user, raise_on_error=raise_on_error)
 
-    async def get_key(self, user: User) -> str | None:
+    async def get_upstream_key(self, user: User) -> str | None:
         async with self.session() as session:
             user = await User.get(session=session, tg_id=user.tg_id)
 
@@ -197,6 +197,18 @@ class VPNService:
         )
         key = f"{subscription}{user.vpn_id}"
         logger.debug(f"Fetched key for {user.tg_id}: {key}.")
+        return key
+
+    async def get_key(self, user: User) -> str | None:
+        async with self.session() as session:
+            user = await User.get(session=session, tg_id=user.tg_id)
+
+        if not user.server_id:
+            logger.debug(f"Server ID for user {user.tg_id} not found.")
+            return None
+
+        key = f"{self.config.bot.DOMAIN}/sub/{user.vpn_id}"
+        logger.debug(f"Fetched public key for {user.tg_id}: {key}.")
         return key
 
     async def create_client(

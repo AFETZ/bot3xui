@@ -1,0 +1,40 @@
+http:
+  routers:
+    xui-shop-http:
+      rule: "Host(`afzvpn.superbebra.uk`) || Host(`bot.superbebra.uk`)"
+      entryPoints: [web]
+      middlewares: [xui-shop-https-redirect]
+      service: xui-shop-noop
+
+    xui-shop:
+      rule: "Host(`afzvpn.superbebra.uk`) || Host(`bot.superbebra.uk`)"
+      entryPoints: [websecure]
+      tls:
+        certResolver: le
+      middlewares: [xui-shop-security]
+      service: xui-shop
+
+  middlewares:
+    xui-shop-https-redirect:
+      redirectScheme:
+        scheme: https
+        permanent: true
+
+    xui-shop-security:
+      headers:
+        stsSeconds: 31536000
+        stsIncludeSubdomains: true
+        forceSTSHeader: true
+        contentTypeNosniff: true
+        referrerPolicy: strict-origin-when-cross-origin
+
+  services:
+    xui-shop:
+      loadBalancer:
+        servers:
+          - url: "http://172.22.0.1:8080"
+
+    xui-shop-noop:
+      loadBalancer:
+        servers:
+          - url: "http://127.0.0.1"

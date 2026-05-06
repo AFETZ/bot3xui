@@ -31,6 +31,11 @@ class PlanService:
         self._plans: list[Plan] = [Plan.from_dict(plan) for plan in self.data["plans"]]
         self._plans_by_code: dict[str, Plan] = {plan.code: plan for plan in self._plans}
         self._durations: list[int] = self.data["durations"]
+        self._public_plans_by_offer_key: dict[tuple[int, bool], Plan] = {}
+        for plan in self._plans:
+            if not plan.is_public:
+                continue
+            self._public_plans_by_offer_key.setdefault(plan.commercial_key, plan)
         logger.info("Plans loaded successfully.")
 
     def _resolve_file_path(self) -> Path:
@@ -54,14 +59,20 @@ class PlanService:
         logger.error("No plans file found. Checked: %s", checked_files)
         raise FileNotFoundError(f"No plans file found. Checked: {checked_files}")
 
-    def get_plan(self, devices: int) -> Plan | None:
-        plan = next(
-            (plan for plan in self._plans if plan.devices == devices and plan.is_public),
-            None,
-        )
+    def get_plan(
+        self,
+        devices: int,
+        *,
+        includes_additional_profile: bool = False,
+    ) -> Plan | None:
+        plan = self._public_plans_by_offer_key.get((devices, includes_additional_profile))
 
         if not plan:
-            logger.critical(f"Plan with {devices} devices not found.")
+            logger.critical(
+                "Plan with %s devices and additional_profile=%s not found.",
+                devices,
+                includes_additional_profile,
+            )
 
         return plan
 
@@ -87,36 +98,73 @@ class PlanService:
         )
 
     @staticmethod
-    def _public_plan_sort_key(plan: Plan) -> tuple[int, int, str]:
+    def _public_plan_sort_key(
+        plan: Plan,
+        *,
+        prefer_additional_profile: bool = False,
+    ) -> tuple[int, int, str]:
         return (
-            1 if plan.includes_additional_profile else 0,
+            0 if plan.includes_additional_profile == prefer_additional_profile else 1,
             plan.devices,
             plan.code,
         )
 
+    def get_public_plan_equivalent(self, plan: Plan | str | None) -> Plan | None:
+        if isinstance(plan, str):
+            plan = self.get_plan_by_code(plan)
+
+        if not plan:
+            return None
+        if plan.is_public:
+            return plan
+
+        return self._public_plans_by_offer_key.get(plan.commercial_key)
+
+    def _is_plan_available_for_currency(self, plan: Plan, currency: str, duration: int) -> bool:
+        currency_prices = plan.prices.get(currency)
+        if not currency_prices:
+            return False
+
+        if duration in currency_prices:
+            return True
+
+        return any(
+            available_duration in currency_prices
+            for available_duration in plan.get_available_durations(self._durations)
+        )
+
     def get_plan_changes(self, current_plan: Plan | str | None, duration: int, currency: str) -> list[Plan]:
-        """Return public plans that cost more than the current one for the given duration."""
+        """Return public plans available for plan change (upgrades and downgrades)."""
         if isinstance(current_plan, str):
             current_plan = self.get_plan_by_code(current_plan)
         if not current_plan:
             return []
 
-        current_price = current_plan.get_price(currency=currency, duration=duration)
+        current_public_plan = self.get_public_plan_equivalent(current_plan)
+        current_offer_key = (
+            current_public_plan.commercial_key
+            if current_public_plan is not None
+            else current_plan.commercial_key
+        )
+
         result = []
-        for plan in self._plans:
-            if not plan.is_public or plan.code == current_plan.code:
+        for plan in self.get_all_plans():
+            if plan.commercial_key == current_offer_key:
                 continue
-            try:
-                plan_price = plan.get_price(currency=currency, duration=duration)
-            except (KeyError, TypeError):
+            if not self._is_plan_available_for_currency(plan, currency, duration):
                 continue
-            if plan_price > current_price:
-                result.append(plan)
-        return sorted(result, key=self._public_plan_sort_key)
+            result.append(plan)
+        return result
 
     def get_all_plans(self, *, prefer_additional_profile: bool = False) -> list[Plan]:
-        public_plans = [plan for plan in self._plans if plan.is_public]
-        return sorted(public_plans, key=self._public_plan_sort_key)
+        public_plans = list(self._public_plans_by_offer_key.values())
+        return sorted(
+            public_plans,
+            key=lambda plan: self._public_plan_sort_key(
+                plan,
+                prefer_additional_profile=prefer_additional_profile,
+            ),
+        )
 
     def get_durations(self) -> list[int]:
         return self._durations

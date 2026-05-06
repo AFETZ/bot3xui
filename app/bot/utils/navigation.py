@@ -38,6 +38,7 @@ class NavSubscription(str, Enum):
     ADDITIONAL_PROFILE = "additional_profile"
     CHANGE = "change"
     CHANGE_CONFIRM = "change_confirm"
+    CHANGE_APPLY = "change_apply"
     EXTEND = "extend"
     UPGRADE = "upgrade"
     UPGRADE_PAYMENT = "upgrade_payment"
@@ -70,14 +71,18 @@ class NavAdminTools(str, Enum):
     EDIT_SERVER = "edit_server"
     SYNC_SERVERS = "sync_servers"
     STATISTICS = "statistics"
+    STATISTICS_PERIOD = "statistics_period"
 
     USER_EDITOR = "user_editor"
     USER_LIST = "user_list"
     USER_LIST_PAGE = "user_list_page"
     USER_SEARCH = "user_search"
     USER_DETAILS = "user_details"
+    USER_BACK = "user_back"
     USER_SEND_MESSAGE = "user_send_message"
     USER_ACTIVE_FILTER = "user_filter_active"
+    USER_PAID_FILTER = "user_filter_paid"
+    USER_TRIAL_FILTER = "user_filter_trial"
     USER_INACTIVE_FILTER = "user_filter_inactive"
     USER_ALL_FILTER = "user_filter_all"
 
@@ -110,3 +115,4 @@ class NavAdminTools(str, Enum):
     MAINTENANCE_MODE_DISABLE = "maintenance_mode_disable"
 
     RESTART_BOT = "restart_bot"
+    TEST_PURCHASE = "test_purchase"

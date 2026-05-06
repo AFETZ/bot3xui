@@ -10,7 +10,6 @@ from app.bot.routers.subscription.keyboard import additional_profile_keyboard
 from app.bot.routers.subscription.subscription_handler import (
     _build_additional_profile_text,
     callback_additional_profile,
-    callback_additional_profile_test_purchase,
 )
 from app.bot.services.subscription import SubscriptionStatus, UpgradeQuote
 from app.bot.utils.navigation import NavSubscription
@@ -35,10 +34,10 @@ def patch_i18n(monkeypatch):
     monkeypatch.setattr("app.bot.utils.formatting._", fake_gettext)
 
 
-def test_main_menu_keyboard_contains_additional_profile_button():
+def test_main_menu_keyboard_contains_subscription_entrypoint():
     markup = main_menu_keyboard()
 
-    assert "Доп. профиль" in flatten_keyboard_texts(markup)
+    assert "main_menu:button:subscription" in flatten_keyboard_texts(markup)
 
 
 def test_additional_profile_keyboard_contains_relevant_actions():
@@ -49,16 +48,14 @@ def test_additional_profile_keyboard_contains_relevant_actions():
             user_id=1,
             plan_code="p3",
         ).pack(),
-        test_purchase_callback=NavSubscription.ADDITIONAL_PROFILE_TEST_PURCHASE,
         show_primary_profile=True,
     )
 
     texts = flatten_keyboard_texts(markup)
 
     assert "Получить основную ссылку" in texts
-    assert "Получить доп. ссылку" in texts
-    assert "Подключить доп. профиль" in texts
-    assert "Тест: 3 месяца + доп. профиль за 1 ₽" in texts
+    assert "Получить ссылку обхода белых списков" in texts
+    assert "Подключить обход белых списков" in texts
     assert "Открыть подписку" in texts
 
 
@@ -143,13 +140,15 @@ async def test_callback_additional_profile_shows_upgrade_offer():
 
     assert message.edit_text.await_count == 1
     kwargs = message.edit_text.await_args.kwargs
-    assert "Доп. профиль" in kwargs["text"]
+    assert "Обход белых списков" in kwargs["text"]
     assert "Доплата за оставшийся период: 75 ₽" in kwargs["text"]
-    assert "Подключить доп. профиль" in flatten_keyboard_texts(kwargs["reply_markup"])
+    assert "Подключить обход белых списков" in flatten_keyboard_texts(
+        kwargs["reply_markup"]
+    )
 
 
 @pytest.mark.asyncio
-async def test_callback_additional_profile_shows_test_purchase_for_inactive_user():
+async def test_callback_additional_profile_shows_subscription_cta_for_inactive_user():
     status = SubscriptionStatus(
         user=SimpleNamespace(tg_id=1),
         client_data=None,
@@ -169,9 +168,7 @@ async def test_callback_additional_profile_shows_test_purchase_for_inactive_user
             can_upgrade_plan=lambda _: False,
         )
     )
-    config = SimpleNamespace(
-        shop=SimpleNamespace(CURRENCY="RUB", PAYMENT_YOOKASSA_ENABLED=True)
-    )
+    config = SimpleNamespace(shop=SimpleNamespace(CURRENCY="RUB"))
 
     await callback_additional_profile(
         callback=callback,
@@ -181,48 +178,5 @@ async def test_callback_additional_profile_shows_test_purchase_for_inactive_user
     )
 
     kwargs = message.edit_text.await_args.kwargs
-    assert "3 месяца + доп. профиль через YooKassa за 1 ₽" in kwargs["text"]
-    assert "Тест: 3 месяца + доп. профиль за 1 ₽" in flatten_keyboard_texts(
-        kwargs["reply_markup"]
-    )
-
-
-@pytest.mark.asyncio
-async def test_callback_additional_profile_test_purchase_creates_yookassa_payment():
-    status = SubscriptionStatus(
-        user=SimpleNamespace(tg_id=1),
-        client_data=None,
-        plan=None,
-        is_active=False,
-        status_check_ok=True,
-        period_duration_days=None,
-        expiry_timestamp=None,
-    )
-    message = SimpleNamespace(edit_text=AsyncMock())
-    callback = SimpleNamespace(message=message)
-    user = SimpleNamespace(tg_id=1, vpn_id="vpn-1")
-    gateway = SimpleNamespace(create_payment=AsyncMock(return_value="https://pay.example/test"))
-    services = SimpleNamespace(
-        subscription=SimpleNamespace(
-            get_subscription_status=AsyncMock(return_value=status),
-        ),
-        notification=SimpleNamespace(show_popup=AsyncMock()),
-    )
-    gateway_factory = SimpleNamespace(
-        get_gateway=lambda name: gateway if name == NavSubscription.PAY_YOOKASSA else None
-    )
-
-    await callback_additional_profile_test_purchase(
-        callback=callback,
-        user=user,
-        services=services,
-        gateway_factory=gateway_factory,
-    )
-
-    payment_data = gateway.create_payment.await_args.args[0]
-    assert payment_data.plan_code == "p3a"
-    assert payment_data.duration == 90
-    assert payment_data.price == 1
-
-    kwargs = message.edit_text.await_args.kwargs
-    assert "Стоимость: 1 ₽" in kwargs["text"]
+    assert "Оформите тариф с обходом белых списков" in kwargs["text"]
+    assert "Открыть подписку" in flatten_keyboard_texts(kwargs["reply_markup"])

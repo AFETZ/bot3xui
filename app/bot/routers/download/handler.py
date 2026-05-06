@@ -9,6 +9,7 @@ from aiohttp.web import HTTPFound, Request, Response
 from app.bot.models import ServicesContainer
 from app.bot.utils.constants import (
     APP_ANDROID_SCHEME,
+    APP_HAPP_ROUTING_SCHEME,
     APP_IOS_SCHEME,
     APP_WINDOWS_SCHEME,
     MAIN_MESSAGE_ID_KEY,
@@ -38,11 +39,12 @@ async def redirect_to_connection(request: Request) -> Response:
     if not scheme or not key:
         raise Response(status=400, reason="Invalid parameters.")
 
-    redirect_url = f"{scheme}{key}"  # TODO: #namevpn
+    redirect_url = f"{scheme}{key}"
     if scheme in {
         APP_IOS_SCHEME,
         APP_ANDROID_SCHEME,
         APP_WINDOWS_SCHEME,
+        APP_HAPP_ROUTING_SCHEME,
     }:
         raise HTTPFound(redirect_url)
 

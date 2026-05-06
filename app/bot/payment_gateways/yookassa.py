@@ -54,6 +54,7 @@ class Yookassa(PaymentGateway):
         self.services = services
 
         Configuration.configure(self.config.yookassa.SHOP_ID, self.config.yookassa.TOKEN)
+        self.app.router.add_get(YOOKASSA_WEBHOOK, self.webhook_probe_handler)
         self.app.router.add_post(YOOKASSA_WEBHOOK, self.webhook_handler)
         logger.info("YooKassa payment gateway initialized.")
 
@@ -117,13 +118,45 @@ class Yookassa(PaymentGateway):
     async def handle_payment_canceled(self, payment_id: str) -> None:
         await self._on_payment_canceled(payment_id)
 
+    async def reconcile_pending_payment(self, payment_id: str) -> bool:
+        try:
+            payment = await asyncio.to_thread(Payment.find_one, payment_id)
+        except Exception as exception:
+            logger.exception(
+                "YooKassa reconcile failed for payment %s: %s",
+                payment_id,
+                exception,
+            )
+            return False
+
+        status = self._normalize_status(payment.status)
+        paid = bool(getattr(payment, "paid", False))
+
+        if status == "succeeded" and paid:
+            logger.info(
+                "YooKassa reconcile confirmed successful payment %s via API.",
+                payment_id,
+            )
+            await self.handle_payment_succeeded(payment_id)
+            return True
+
+        if status == "canceled":
+            logger.info(
+                "YooKassa reconcile confirmed canceled payment %s via API.",
+                payment_id,
+            )
+            await self.handle_payment_canceled(payment_id)
+            return True
+
+        return False
+
     @staticmethod
     def _extract_source_ip(request: Request) -> tuple[str, str, str]:
+        cf_connecting_ip = request.headers.get("CF-Connecting-IP", "")
         x_forwarded_for = request.headers.get("X-Forwarded-For", "")
         remote_ip = request.remote or ""
 
-        # Traefik may pass X-Forwarded-For as a comma-separated chain.
-        ip = x_forwarded_for.split(",")[0].strip() if x_forwarded_for else remote_ip
+        ip = cf_connecting_ip or (x_forwarded_for.split(",")[0].strip() if x_forwarded_for else remote_ip)
         return ip, x_forwarded_for, remote_ip
 
     @staticmethod
@@ -168,14 +201,18 @@ class Yookassa(PaymentGateway):
 
         return is_valid
 
+    async def webhook_probe_handler(self, _: Request) -> Response:
+        return Response(status=405, headers={"Allow": "POST"})
+
     async def webhook_handler(self, request: Request) -> Response:
         try:
             event_json = await request.json()
             notification_object = WebhookNotificationFactory().create(event_json)
             response_object = notification_object.object
+            if response_object is None:
+                return Response(status=400)
             payment_id = response_object.id
             if not payment_id:
-                logger.warning("YooKassa webhook rejected: payment_id is missing.")
                 return Response(status=400)
 
             source_ip, x_forwarded_for, remote_ip = self._extract_source_ip(request)
@@ -189,14 +226,10 @@ class Yookassa(PaymentGateway):
                     remote_ip,
                 )
 
-            if not await self._is_event_confirmed_by_api(payment_id, notification_object.event):
-                return Response(status=403)
-
-            logger.info(
-                "YooKassa webhook received: event=%s payment_id=%s",
-                notification_object.event,
-                payment_id,
-            )
+                if not await self._is_event_confirmed_by_api(
+                    payment_id, notification_object.event
+                ):
+                    return Response(status=403)
 
             match notification_object.event:
                 case WebhookNotificationEventType.PAYMENT_SUCCEEDED:
