@@ -1,281 +1,193 @@
-<div align="center" markdown>
+# AFZVPN Bot
 
-<p align="center">
-    <a href="https://github.com/snoups/3xui-shop/blob/main/README.md"><u><b>ENGLISH</b></u></a> •
-    <a href="https://github.com/snoups/3xui-shop/blob/main/README.ru_RU.md"><u><b>РУССКИЙ</b></u></a>
-</p>
+Production Telegram bot for selling and managing VPN subscriptions through 3X-UI.
 
-![3xui-shop](https://github.com/user-attachments/assets/282d10db-a355-4c65-a2cf-eb0e8ec8eed1)
+[![Release](https://img.shields.io/github/v/tag/AFETZ/bot3xui?label=release)](https://github.com/AFETZ/bot3xui/tags)
+[![Python](https://img.shields.io/badge/python-3.12-blue)](https://www.python.org/)
+[![Telegram](https://img.shields.io/badge/Telegram-bot-229ED9)](https://telegram.org/)
+[![License](https://img.shields.io/github/license/AFETZ/bot3xui)](LICENSE)
 
-**Этот проект представляет собой Telegram-бота для продажи подписок на VPN. Работает с 3X-UI.**
+## Что Это
 
-<p align="center">
-    <a href="#overview">Обзор</a> •
-    <a href="#installation-guide">Руководство по установке</a> •
-</p>
+**AFZVPN Bot** - продовая версия Telegram-бота для продажи VPN-подписок. Он связывает пользователей Telegram, оплаты, клиентов 3X-UI, тарифы, промокоды, поддержку и админские инструменты в один рабочий сервис.
 
-![GitHub License](https://img.shields.io/github/license/snoups/3xui-shop)
-![GitHub Downloads (all assets, all releases)](https://img.shields.io/github/downloads/snoups/3xui-shop/total)
-![GitHub Release](https://img.shields.io/github/v/release/snoups/3xui-shop)
-![GitHub Issues or Pull Requests](https://img.shields.io/github/issues/snoups/3xui-shop)
+Проект вырос из идеи `3xui-shop`, но этот репозиторий поддерживается как кастомная сборка AFZVPN: с продовыми правками, Happ-онбордингом, дополнительными профилями, RU Direct, админкой и операционными скриптами.
 
+## Основные Возможности
 
-[![Static Badge](https://img.shields.io/badge/public_channel-white?style=social&logo=Telegram&logoColor=blue&logoSize=auto&labelColor=white&link=https%3A%2F%2Ft.me%2Fsn0ups)](https://t.me/sn0ups)
-[![Static Badge](https://img.shields.io/badge/contact_me-white?style=social&logo=Telegram&logoColor=blue&logoSize=auto&labelColor=white&link=https%3A%2F%2Ft.me%2Fsnoups)](https://t.me/snoups)
-![GitHub Repo stars](https://img.shields.io/github/stars/snoups/3xui-shop)
-</div>
+- Telegram-бот для продажи и управления VPN-подписками
+- интеграция с 3X-UI для создания, продления, проверки и управления клиентами
+- тарифы с разными сроками, валютами и количеством устройств
+- one-click подключение в Happ для iOS, Android и Windows
+- **RU Direct для Happ**: российские сервисы идут напрямую, зарубежный трафик идет через VPN
+- прокси основного профиля `/sub/{vpn_id}` с проверкой активной подписки
+- профиль обхода белых списков `/wl/{vpn_id}` для подходящих тарифов
+- дополнительные тарифы с обходом белых списков
+- пробный период и реферальные бонусы
+- многоразовые промокоды с лимитами активаций
+- платежи: Telegram Stars, YooKassa, YooMoney, Cryptomus, Heleket
+- админка для пользователей, статистики, серверов, промокодов, уведомлений, бэкапов, техрежима и рестарта
+- polling или webhook режим
+- Redis FSM storage, SQLite, Alembic, Docker
 
-> [!WARNING]
-> **Этот репозиторий больше не поддерживается.**
-> **Бот переехал на новую панель и теперь имеет свой новый [репозиторий](https://github.com/snoups/remnashop/)
-> с улучшенной архитектурой, расширенным функционалом и повышенной стабильностью —
-> всё это стало возможным благодаря Remnawave.**
->
-> **[Ознакомьтесь с новым проектом](https://github.com/snoups/remnashop/) — он быстрее, чище и гораздо мощнее!**
+## Пользовательский Путь
 
-<a id="overview"></a>
+1. Пользователь открывает Telegram-бота.
+2. Выбирает тариф, срок и способ оплаты.
+3. После оплаты бот создает или продлевает клиента в 3X-UI.
+4. Пользователь открывает **Профиль -> Подключиться -> Выбор платформы**.
+5. Бот дает кнопки:
+   - основной профиль Happ
+   - настройка RU Direct в Happ
+   - профиль обхода белых списков, если он включен в тариф
 
-## 📝 Обзор
+## RU Direct
 
-**3X-UI-SHOP** — это комплексное решение, предназначенное для автоматизации продажи подписок на VPN через Telegram. Бот использует API панели **3X-UI** для управления клиентами и поддерживает различные способы оплаты, включая **Cryptomus**, **Heleket**, **YooKassa**, **YooMoney** и **Telegram Stars**.
+RU Direct - routing-профиль для Happ, чтобы пользователю не приходилось постоянно включать и выключать VPN:
 
-Основные возможности:
+- российские домены и российские IP идут напрямую
+- зарубежные сервисы продолжают идти через VPN
+- настройка включается одной кнопкой: **Профиль -> Подключиться -> Выбор платформы -> Настроить RU Direct в Happ**
 
-- **Управление серверами**
-    - Добавление, удаление, отключение и проверка серверов в пуле
-    - Автоматическое распределение новых клиентов по серверам
-    - Управление серверами без перезапуска или перенастройки бота
-    - ~~Замена одного сервера другим~~
-- **Промокоды**
-    - Создание, редактирование и удаление промокодов
-    - Промокоды для добавления дополнительного времени подписки
-    - ~~Промокоды со скидками~~
-- **Уведомления**
-    - Отправка сообщений конкретному пользователю или всем пользователям
-    - Редактирование последнего отправленного уведомления
-    - Форматирование текста с использованием HTML
-    - Предпросмотр уведомлений перед отправкой
-    - Системные уведомления для разработчика и администраторов
-- **Двухуровневая реферальная система** (by [@Heimlet](https://github.com/Heimlet))
-    - Просмотр статистики рефералов
-    - Вознаграждение за привлечение новых пользователей
-    - Поддержка двухуровневой реферальной системы
-- **Пробный период** (by [@Heimlet](https://github.com/Heimlet))
-    - Предоставление бесплатной пробной подписки
-    - Увеличенный пробный период для приглашённых пользователей
-    - Настройка и отключение пробного периода
-- **Гибкая платежная система**
-    - Изменение валюты по умолчанию
-    - Гибкая архитектура для добавления новых платёжных шлюзов
-    - ~~Добавление, редактирование и удаление тарифных планов в любое время~~
-    - ~~Изменение порядка отображения вариантов оплаты~~
-- **~~Редактор пользователей~~**
-    - ~~Просмотр информации о пользователе~~
-    - ~~Просмотр статистики рефералов~~
-    - ~~Просмотр истории платежей и активированных промокодов~~
-    - ~~Просмотр информации о сервере~~
-    - ~~Редактирование подписки~~
-    - ~~Блокировка и разблокировка пользователей~~
-    - ~~Быстрый доступ к пользователю через пересланное сообщение~~
-    - ~~Персональные скидки для пользователей~~
+Это удобно, если пользователю нужны российские банки, маркетплейсы, госуслуги и локальные приложения, но при этом зарубежные сервисы должны оставаться доступными через VPN.
 
-### ⚙️ Админ-панель
-Бот включает удобную панель администратора с инструментами для эффективного управления.
-Администраторы не имеют доступа к управлению серверами.
+RU Direct считается beta-функцией: маршруты могут донастраиваться по обратной связи пользователей.
 
-- **`Менеджер серверов`**: Добавление, удаление, отключение и проверка серверов в пуле
-- **`Статистика`**: Просмотр аналитики использования и различных данных
-- **`Редактор пользователей`**: Управление пользователями и подписками
-- **`Редактор промокодов`**: Создание, редактирование и удаление промокодов
-- **`Отправка уведомлений`**: Отправка уведомлений
-- **`Резервное копирование БД`**: Создание резервной копии базы данных
-- **`Режим обслуживания`**: Отключение доступа для пользователей
+## Админка
 
+В боте есть админский раздел для ежедневной эксплуатации:
 
-### 🚧 Текущие задачи
-- [x] Пробный период
-- [x] Реферальная система
-- [ ] Статистика
-- [ ] Редактор пользователей
-- [ ] Редактор планов
-- [ ] Гибкий пул серверов
-- [ ] Кастомные промокоды
+- поиск пользователей и карточка пользователя
+- контекст подписки и оплат
+- статистика бота
+- управление пулом серверов
+- создание, редактирование и удаление промокодов
+- массовые и личные уведомления
+- резервные копии базы
+- режим обслуживания
+- рестарт бота из Telegram
 
-<a id="installation-guide"></a>
+## Web Routes
 
-## 🛠️ Руководство по установке
+| Route | Назначение |
+| --- | --- |
+| `/healthz` | health check |
+| `/webhook` | Telegram webhook |
+| `/connection` | redirect для deep-link в Happ |
+| `/sub/{vpn_id}` | прокси основного профиля |
+| `/wl/{vpn_id}` | прокси профиля обхода белых списков |
+| `/yookassa` | YooKassa webhook |
+| `/yoomoney` | YooMoney webhook |
+| `/cryptomus` | Cryptomus webhook |
+| `/heleket` | Heleket webhook |
 
-### Зависимости
+## Stack
 
-Перед началом установки убедитесь, что у вас установлен [**Docker**](https://www.docker.com/)
+- Python 3.12
+- aiogram 3
+- aiohttp
+- SQLAlchemy + Alembic
+- SQLite
+- Redis
+- APScheduler
+- py3xui
+- Docker Compose
+- Traefik-compatible deployment
 
-### Docker Установка 
+## Быстрый Старт
 
-1. **Установка/Обновление:**
-   ```bash
-   bash <(curl -Ls https://raw.githubusercontent.com/snoups/3xui-shop/main/scripts/install.sh) -q
-   cd 3xui-shop
-   ```
+Нужно заранее подготовить:
 
-2. **Настройка переменных окружения и планов:**
-- `plans.json` теперь уже есть в репозитории. Скопируйте только `.env.example` в `.env`:
-    ```bash
-    cp .env.example .env
-    ```
-    > Обновите файл `plans.json` согласно вашим тарифным планам. [(Настройка планов)](#subscription-plans-configuration)
+- Docker и Docker Compose
+- Telegram bot token
+- доступы к 3X-UI
+- публичный HTTPS-домен для webhook и connection links
 
-    > Обновите файл `.env` согласно вашей конфигурации. [(Настройка переменных окружения)](#environment-variables-configuration)
-
-1. **Соберите образ Docker:**
-   ```bash
-   docker compose build
-   ```
-
-2. **Запустите контейнер Docker:**
-   ```bash
-   docker compose up -d
-   ```
-
-### Настройка переменных окружения
-
-| Переменная | Требуется | По умолчанию | Описание |
-|-|-|-|-|
-| LETSENCRYPT_EMAIL | 🔴 | - | Email, используемый для создания сертификата |
-| | | |
-| BOT_TOKEN | 🔴 | - | Токен вашего Telegram-бота |
-| BOT_ADMINS | ⭕ | - | Список ID администраторов (например, 123456789,987654321) |
-| BOT_DEV_ID | 🔴 | - | ID разработчика бота |
-| BOT_SUPPORT_ID | 🔴 | - | ID пользователя, отвечающего за поддержку |
-| BOT_DOMAIN | 🔴 | - | Домен вашего бота (например, 3xui-shop.com) |
-| BOT_PORT | ⭕ | 8080 | Порт, используемый ботом |
-| BOT_PROXY_URL | ⭕ | - | Необязательный SOCKS5-прокси для Telegram Bot API (например, socks5://127.0.0.1:10808) |
-| BOT_API_SERVER | ⭕ | - | Необязательный базовый URL кастомного Telegram Bot API |
-| BOT_USE_WEBHOOK | ⭕ | True | Включить webhook-режим; установите `False` для polling-режима |
-| | | |
-| SHOP_EMAIL | ⭕ | support@3xui-shop.com | Email для отправки чеков |
-| SHOP_CURRENCY | ⭕ | RUB | Валюта для кнопок (например, RUB, USD, XTR) |
-| SHOP_TRIAL_ENABLED | ⭕ | True | Включить пробную подписку для новых пользователей |
-| SHOP_TRIAL_PERIOD | ⭕ | 3 | Продолжительность пробной подписки в днях |
-| SHOP_REFERRED_TRIAL_ENABLED | ⭕ | False | Включить расширенный пробный период для приглашённых пользователей |
-| SHOP_REFERRED_TRIAL_PERIOD | ⭕ | 7 | Продолжительность расширенной пробной подписки для приглашённых пользователей (в днях) |
-| SHOP_REFERRER_REWARD_ENABLED | ⭕ | True | Включить двухуровневую систему вознаграждений |
-| SHOP_REFERRER_LEVEL_ONE_PERIOD | ⭕ | 10 | Вознаграждение в днях от первого уровня реферала |
-| SHOP_REFERRER_LEVEL_TWO_PERIOD | ⭕ | 3 | Вознаграждение в днях от второго уровня реферала |
-| SHOP_BONUS_DEVICES_COUNT | ⭕ | 1 | Лимит устройств по умолчанию для промокодов, пробной подписки и рефералов (в зависимости от настроек плана) |
-| SHOP_PAYMENT_STARS_ENABLED | ⭕ | True | Включить оплату через Telegram Stars |
-| SHOP_PAYMENT_CRYPTOMUS_ENABLED | ⭕ | False | Включить оплату через Cryptomus |
-| SHOP_PAYMENT_HELEKET_ENABLED | ⭕ | False | Включить оплату через Heleket |
-| SHOP_PAYMENT_YOOKASSA_ENABLED | ⭕ | False | Включить оплату через YooKassa |
-| SHOP_PAYMENT_YOOMONEY_ENABLED | ⭕ | False | Включить оплату через YooMoney |
-| | | |
-| XUI_USERNAME | 🔴 | - | Имя пользователя для аутентификации в панели 3X-UI |
-| XUI_PASSWORD | 🔴 | - | Пароль для аутентификации в панели 3X-UI |
-| XUI_TOKEN | ⭕ | - | Токен для аутентификации (если установлен) |
-| XUI_SUBSCRIPTION_PORT | ⭕ | 2096 | Порт для подписки |
-| XUI_SUBSCRIPTION_PATH | ⭕ | /user/ | Путь для подписки |
-| | | |
-| CRYPTOMUS_API_KEY | ⭕ | - | API-ключ для оплаты через Cryptomus |
-| CRYPTOMUS_MERCHANT_ID | ⭕ | - | Merchant ID для оплаты через Cryptomus |
-| | | |
-| HELEKET_API_KEY | ⭕ | - | API-ключ для оплаты через Heleket |
-| HELEKET_MERCHANT_ID | ⭕ | - | Merchant ID для оплаты через Heleket |
-| | | |
-| YOOKASSA_TOKEN | ⭕ | - | Токен для оплаты через YooKassa |
-| YOOKASSA_SHOP_ID | ⭕ | - | Shop ID для оплаты через YooKassa |
-| | | |
-| YOOMONEY_WALLET_ID | ⭕ | - | Wallet ID для оплаты через YooMoney |
-| YOOMONEY_NOTIFICATION_SECRET | ⭕ | - | Секретный ключ уведомлений для оплаты через YooMoney |
-| | | |
-| LOG_LEVEL | ⭕ | DEBUG | Уровень логирования (например, INFO, DEBUG) |
-| LOG_FORMAT | ⭕ | %(asctime)s \| %(name)s \| %(levelname)s \| %(message)s | Формат логов |
-| LOG_ARCHIVE_FORMAT | ⭕ | zip | Формат архива логов (например, zip, gz) |
-
-
-### Настройка тарифных планов
-
-```json
-{
-    "durations": [30, 60, 180, 365],  // Доступные длительности подписок в днях
-
-    "plans": 
-    [
-        {
-            "devices": 1,  // Количество устройств
-            "prices": {
-                "RUB": {  // Цены в рублях (RUB)
-                    "30": 70,   // Цена за 30 дней
-                    "60": 120,  // Цена за 60 дней
-                    "180": 300, // Цена за 180 дней
-                    "365": 600  // Цена за 365 дней
-                },
-                "USD": {  // Цены в долларах (USD)
-                    "30": 0.7,  // Цена за 30 дней
-                    "60": 1.2,  // Цена за 60 дней
-                    "180": 3,   // Цена за 180 дней
-                    "365": 6    // Цена за 365 дней
-                },
-                "XTR": {  // Цены в Telegram звездах (XTR)
-                    "30": 60,   // Цена за 30 дней
-                    "60": 100,  // Цена за 60 дней
-                    "180": 250, // Цена за 180 дней
-                    "365": 500  // Цена за 365 дней
-                }
-            }
-        },
-        {
-            // Следующий план
-        }
-    ]
-}
+```bash
+git clone https://github.com/AFETZ/bot3xui.git
+cd bot3xui
+cp .env.example .env
 ```
 
-### Настройка YooKassa
+Заполните `.env` и настройте `plans.json`, затем запустите:
 
-1. **Настройка Webhook:**
-    - Перейдите на страницу [HTTP Уведомления](https://yookassa.ru/my/merchant/integration/http-notifications).
-    - Введите домен бота в URL для уведомлений, должен заканчиваться на `/yookassa` (например, `https://3xui-shop.com/yookassa`).
-    - Выберите следующие события::
-        - `payment.succeeded`
-        - `payment.waiting_for_capture`
-        - `payment.canceled`
+```bash
+docker compose up -d --build
+```
 
-2. **Настройка переменных окружения:**
-    - Установите следующие переменные окружения:
-        - `YOOKASSA_TOKEN`: Ваш секретный ключ
-        - `YOOKASSA_SHOP_ID`: Ваш Shop ID
+Только продовый bot service:
 
-### Настройка YooMoney
+```bash
+docker compose up -d --build bot
+```
 
-1. **Настройка Webhook:**
-    - Перейдите на страницу [HTTP Уведомления](https://yoomoney.ru/transfer/myservices/http-notification).
-    - Введите домен бота в URL для уведомлений, должен заканчиваться на `/yoomoney` (например, `https://3xui-shop.com/yoomoney`).
-    - Скопируйте секретный ключ уведомлений.
-    - Отметьте галочку для `отправка HTTP-уведомлений`.
-    - Сохраните изменения.
+## Важные Переменные Окружения
 
-2. **Настройка переменных окружения:**
-    - Установите следующие переменные окружения:
-        - `YOOMONEY_WALLET_ID`: Ваш ID кошелька
-        - `YOOMONEY_NOTIFICATION_SECRET`: Ваш секретный ключ уведомлений
+| Variable | Для чего |
+| --- | --- |
+| `BOT_TOKEN` | токен Telegram-бота |
+| `BOT_DEV_ID` | Telegram ID разработчика |
+| `BOT_ADMINS` | Telegram ID админов через запятую |
+| `BOT_DOMAIN` | публичный домен, например `https://example.com` |
+| `BOT_HOST` | host для Traefik labels или deploy-конфига |
+| `BOT_USE_WEBHOOK` | `True` для webhook, `False` для polling |
+| `BOT_PROXY_URL` | optional SOCKS5 proxy для Telegram API |
+| `XUI_USERNAME` | логин 3X-UI |
+| `XUI_PASSWORD` | пароль 3X-UI |
+| `XUI_SUBSCRIPTION_SCHEME` | схема subscription URL |
+| `XUI_SUBSCRIPTION_PORT` | порт подписки |
+| `XUI_SUBSCRIPTION_PATH` | path подписки |
+| `SHOP_CURRENCY` | основная валюта магазина |
+| `SHOP_PAYMENT_STARS_ENABLED` | включить Telegram Stars |
+| `SHOP_PAYMENT_YOOKASSA_ENABLED` | включить YooKassa |
+| `SHOP_PAYMENT_YOOMONEY_ENABLED` | включить YooMoney |
+| `SHOP_PAYMENT_CRYPTOMUS_ENABLED` | включить Cryptomus |
+| `SHOP_PAYMENT_HELEKET_ENABLED` | включить Heleket |
 
-### Настройка 3X-UI
+Не коммитьте `.env`, дампы базы, Redis data, сертификаты, логи и локальные runtime-файлы.
 
-Для правильной работы бота необходимо настроить панель 3X-UI:
+## Тарифы
 
-- [Настройка SSL сертификата.](https://github.com/MHSanaei/3x-ui?tab=readme-ov-file#ssl-certificate)
-- Настройте Inbound **(использоваться будет только первый в списке)** для добавления клиентов.
-- Включите сервис подписки с портом `2096` и путем `/user/`.
-    > **Не забудьте указать сертификат для подписки.**
-- Рекомендуется отключить шифрование конфигурации.
+Тарифы настраиваются в `plans.json`.
 
-<a id="bugs-and-feature-requests"></a>
+Поддерживаемые поля:
 
-### Настройка вознаграждений за рефералов и пробный период
+- `code`
+- `title`
+- `devices`
+- `prices`
+- `is_public`
+- `is_popular`
+- `includes_additional_profile`
+- `upgrade_from`
 
-Бот поддерживает **пробные подписки** and a **двухуровневую систему вознаграждений за рефералов**. Вот как это работает: Вся настройка доступна через `.env` [(см. выше)](#environment-variables-configuration).
+Тарифы с `includes_additional_profile: true` открывают профиль обхода белых списков.
 
-| Тип вознаграждения | Как это работает |
-| - | - |
-| Пробный период | Пробная подписка доступна через кнопку "ПОПРОБОВАТЬ БЕСПЛАТНО" на главном меню для любого пользователя, который не имеет активной подписки. |
-| Увеличенный пробный период | Эта опция аналогична предыдущему, но позволяет настроить **увеличенный пробный период** для приглашенного пользователя. |
-| Реферальные вознаграждения | Когда приглашенный пользователь оплачивает подписку, пригласитель и пригласитель второго уровня (пользователь, который пригласил следующего) получают фиксированное количество дней для каждого уровня. |
+## Тесты
+
+Полный прогон:
+
+```bash
+./.venv/bin/pytest
+```
+
+Проверка релиза:
+
+```text
+44 passed
+```
+
+## Production Notes
+
+- `main` - продовая ветка.
+- `v1` - первый production release tag этой кастомной AFZVPN-сборки.
+- Runtime state живет вне Git: `.env`, `.local/`, Redis data, logs, certs, database backups.
+- Перед крупными деплоями делайте backup bundle и архив рабочего дерева.
+
+## Credits
+
+Проект вырос из open-source экосистемы `3xui-shop` и адаптирован под production-задачи AFZVPN.
+
+Внешний источник правил для профиля обхода белых списков:
+
+- https://github.com/zieng2/wl
