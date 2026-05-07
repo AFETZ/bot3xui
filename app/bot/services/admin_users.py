@@ -13,11 +13,13 @@ from app.bot.models import (
     AdminUserEditorOverview,
     AdminUserListItem,
     AdminUserListPage,
+    SubscriptionData,
 )
 from app.bot.services.payment_stats import PaymentStatsService
 from app.bot.services.subscription import SubscriptionService
 from app.bot.utils.constants import TransactionStatus
-from app.db.models import Referral, Transaction, User
+from app.bot.utils.formatting import format_subscription_period
+from app.db.models import Promocode, PromocodeActivation, Referral, Transaction, User
 
 logger = logging.getLogger(__name__)
 
@@ -251,6 +253,15 @@ class AdminUserService:
 
             referral_count = await Referral.get_referral_count(s, target.tg_id)
             referral_record = await Referral.get_referral(s, target.tg_id)
+            multi_use_promocodes = (
+                await s.execute(
+                    select(Promocode)
+                    .join(PromocodeActivation, PromocodeActivation.promocode_id == Promocode.id)
+                    .where(PromocodeActivation.user_tg_id == target.tg_id)
+                    .order_by(PromocodeActivation.activated_at.desc())
+                )
+            ).scalars().all()
+            all_promocodes = list(target.activated_promocodes or []) + list(multi_use_promocodes)
 
             return AdminUserDetails(
                 tg_id=target.tg_id,
@@ -260,6 +271,8 @@ class AdminUserService:
                 created_at=target.created_at,
                 language_code=target.language_code,
                 server_name=target.server.name if target.server else None,
+                server_host=target.server.host if target.server else None,
+                server_online=target.server.online if target.server else None,
                 subscription_status_ok=status.status_check_ok,
                 subscription_active=status.is_active,
                 subscription_plan_code=(
@@ -281,6 +294,20 @@ class AdminUserService:
                 referrer_tg_id=referral_record.referrer_tg_id if referral_record else None,
                 trial_used=target.is_trial_used,
                 source_invite_name=target.source_invite_name,
+                is_blocked=target.is_blocked,
+                personal_discount_percent=target.personal_discount_percent,
+                activated_promocodes=[
+                    f"{promocode.code} · {format_subscription_period(promocode.duration)}"
+                    for promocode in all_promocodes[:8]
+                ],
+                latest_transactions=[
+                    self._format_transaction_for_admin(transaction)
+                    for transaction in sorted(
+                        transactions,
+                        key=lambda transaction: transaction.created_at,
+                        reverse=True,
+                    )[:8]
+                ],
             )
 
         if session:
@@ -288,3 +315,21 @@ class AdminUserService:
 
         async with self.session_factory() as session:
             return await _get_details(session)
+
+    @staticmethod
+    def _format_transaction_for_admin(transaction: Transaction) -> str:
+        try:
+            data = SubscriptionData.unpack(transaction.subscription)
+            plan = data.plan_code or f"{data.devices} devices"
+            duration = format_subscription_period(data.duration)
+            price = data.price
+        except Exception:
+            plan = "?"
+            duration = "?"
+            price = "?"
+
+        created_at = transaction.created_at.strftime("%Y-%m-%d")
+        return (
+            f"{created_at} · {transaction.status.value} · {plan} · "
+            f"{duration} · {price} · {transaction.payment_id}"
+        )

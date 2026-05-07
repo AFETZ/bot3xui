@@ -475,6 +475,72 @@ async def test_has_additional_profile_access_checks_entitlement(subscription_ser
 
 
 @pytest.mark.asyncio
+async def test_get_subscription_status_treats_disabled_panel_client_as_inactive(
+    monkeypatch,
+    subscription_service,
+):
+    user = SimpleNamespace(
+        tg_id=201,
+        vpn_id="vpn-201",
+        server_id=1,
+        current_plan_code="p3",
+        current_period_duration_days=30,
+        is_blocked=False,
+    )
+    subscription_service.vpn_service.get_client_data = AsyncMock(
+        return_value=ClientData(
+            max_devices=3,
+            traffic_total=0,
+            traffic_remaining=0,
+            traffic_used=0,
+            traffic_up=0,
+            traffic_down=0,
+            expiry_time=60 * 60 * 1000,
+            enabled=False,
+        )
+    )
+    monkeypatch.setattr("app.bot.services.subscription.get_current_timestamp", lambda: 0)
+
+    status = await subscription_service.get_subscription_status(user)
+
+    assert status.status_check_ok is True
+    assert status.is_active is False
+
+
+@pytest.mark.asyncio
+async def test_get_subscription_status_treats_blocked_user_as_inactive(
+    monkeypatch,
+    subscription_service,
+):
+    user = SimpleNamespace(
+        tg_id=202,
+        vpn_id="vpn-202",
+        server_id=1,
+        current_plan_code="p3",
+        current_period_duration_days=30,
+        is_blocked=True,
+    )
+    subscription_service.vpn_service.get_client_data = AsyncMock(
+        return_value=ClientData(
+            max_devices=3,
+            traffic_total=0,
+            traffic_remaining=0,
+            traffic_used=0,
+            traffic_up=0,
+            traffic_down=0,
+            expiry_time=60 * 60 * 1000,
+            enabled=True,
+        )
+    )
+    monkeypatch.setattr("app.bot.services.subscription.get_current_timestamp", lambda: 0)
+
+    status = await subscription_service.get_subscription_status(user)
+
+    assert status.status_check_ok is True
+    assert status.is_active is False
+
+
+@pytest.mark.asyncio
 async def test_get_subscription_status_by_vpn_id_returns_user_and_status(
     monkeypatch,
     subscription_service,
@@ -516,6 +582,34 @@ def test_get_additional_profile_url_uses_domain_and_vpn_id(subscription_service)
         subscription_service.get_additional_profile_url(user)
         == "https://bot.example/wl/vpn-500"
     )
+
+
+def test_apply_personal_discount_normalizes_price_by_currency():
+    user = SimpleNamespace(personal_discount_percent=25)
+
+    assert SubscriptionService.apply_personal_discount(
+        user=user,
+        price=100,
+        currency=Currency.RUB,
+    ) == 75
+    assert SubscriptionService.apply_personal_discount(
+        user=user,
+        price=10,
+        currency=Currency.USD,
+    ) == 7.5
+
+
+def test_apply_personal_discount_is_safe_for_missing_or_extreme_values():
+    assert SubscriptionService.apply_personal_discount(
+        user=SimpleNamespace(),
+        price=100,
+        currency=Currency.RUB,
+    ) == 100
+    assert SubscriptionService.apply_personal_discount(
+        user=SimpleNamespace(personal_discount_percent=100),
+        price=10,
+        currency=Currency.XTR,
+    ) == 1
 
 
 @pytest.mark.asyncio

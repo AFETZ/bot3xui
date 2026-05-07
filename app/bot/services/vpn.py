@@ -161,6 +161,7 @@ class VPNService:
                 traffic_up=client.up,
                 traffic_down=client.down,
                 expiry_time=expiry_time,
+                enabled=bool(client.enable),
             )
             logger.debug(f"Successfully retrieved client data for {user.tg_id}: {client_data}.")
             return client_data
@@ -343,6 +344,28 @@ class VPNService:
                 replace_duration=False,
             )
         return False
+
+    async def set_client_enabled(self, user: User, enabled: bool) -> bool:
+        logger.info("Setting client %s enabled=%s.", user.tg_id, enabled)
+        connection = await self.server_pool_service.get_connection(user)
+
+        if not connection:
+            logger.warning("Cannot set enabled=%s for user %s: no server connection.", enabled, user.tg_id)
+            return False
+
+        try:
+            client = await connection.api.client.get_by_email(str(user.tg_id))
+            if client is None:
+                logger.warning("Cannot set enabled=%s for user %s: client not found.", enabled, user.tg_id)
+                return False
+
+            client.enable = enabled
+            await connection.api.client.update(client_uuid=client.id, client=client)
+            logger.info("Client %s enabled set to %s.", user.tg_id, enabled)
+            return True
+        except Exception as exception:
+            logger.error("Failed to set client %s enabled=%s: %s", user.tg_id, enabled, exception)
+            return False
 
     async def process_bonus_days(self, user: User, duration: int, devices: int) -> bool:
         if await self.is_client_exists(user):

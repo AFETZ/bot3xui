@@ -46,6 +46,12 @@ class User(Base):
     current_plan_code: Mapped[str | None] = mapped_column(String(length=32), nullable=True)
     current_period_started_at: Mapped[datetime | None] = mapped_column(nullable=True)
     current_period_duration_days: Mapped[int | None] = mapped_column(nullable=True)
+    is_blocked: Mapped[bool] = mapped_column(default=False, server_default="0", nullable=False)
+    personal_discount_percent: Mapped[int] = mapped_column(
+        default=0,
+        server_default="0",
+        nullable=False,
+    )
     language_code: Mapped[str] = mapped_column(
         String(length=5),
         nullable=False,
@@ -79,6 +85,8 @@ class User(Base):
             f"<User(id={self.id}, tg_id={self.tg_id}, vpn_id='{self.vpn_id}', "
             f"server_id={self.server_id}, first_name='{self.first_name}', "
             f"username='{self.username}', current_plan_code='{self.current_plan_code}', "
+            f"is_blocked={self.is_blocked}, "
+            f"personal_discount_percent={self.personal_discount_percent}, "
             f"language_code='{self.language_code}', created_at={self.created_at}, "
             f"is_trial_used={self.is_trial_used})>"
         )

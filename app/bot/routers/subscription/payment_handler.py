@@ -79,6 +79,12 @@ async def callback_payment_method_selected(
             duration = callback_data.duration
         else:
             price = plan.get_price(currency=gateway.currency, duration=duration)
+        original_price = price
+        price = services.subscription.apply_personal_discount(
+            user=user,
+            price=price,
+            currency=gateway.currency,
+        )
         callback_data.price = price
 
         pay_url = await gateway.create_payment(callback_data)
@@ -103,12 +109,17 @@ async def callback_payment_method_selected(
         else:
             text = _("payment:message:order")
 
+        personal_discount_percent = int(getattr(user, "personal_discount_percent", 0) or 0)
         await callback.message.edit_text(
             text=text.format(
                 plan=plan.title or devices,
                 devices=devices,
                 duration=format_subscription_period(duration),
-                price=price,
+                price=(
+                    f"{price} (скидка {personal_discount_percent}%, было {original_price})"
+                    if personal_discount_percent
+                    else price
+                ),
                 currency=gateway.currency.symbol,
             ),
             reply_markup=pay_keyboard(pay_url=pay_url, callback_data=callback_data),

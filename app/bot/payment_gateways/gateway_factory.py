@@ -6,6 +6,7 @@ from sqlalchemy.ext.asyncio import async_sessionmaker
 
 from app.bot.models import ServicesContainer
 from app.config import Config
+from app.bot.services.plan import DEFAULT_PAYMENT_ORDER, PlanService
 
 from ._gateway import PaymentGateway
 from .cryptomus import Cryptomus
@@ -18,6 +19,7 @@ from .yoomoney import Yoomoney
 class GatewayFactory:
     def __init__(self) -> None:
         self._gateways: dict[str, PaymentGateway] = {}
+        self._plan_service: PlanService | None = None
 
     def register_gateway(self, gateway: PaymentGateway) -> None:
         self._gateways[gateway.callback] = gateway
@@ -29,7 +31,20 @@ class GatewayFactory:
         return gateway
 
     def get_gateways(self) -> list[PaymentGateway]:
-        return list(self._gateways.values())
+        gateways = list(self._gateways.values())
+        payment_order = (
+            self._plan_service.get_payment_order()
+            if self._plan_service
+            else DEFAULT_PAYMENT_ORDER
+        )
+        order_index = {callback: index for index, callback in enumerate(payment_order)}
+        return sorted(
+            gateways,
+            key=lambda gateway: (
+                order_index.get(gateway.callback, len(order_index)),
+                gateway.name,
+            ),
+        )
 
     def register_gateways(
         self,
@@ -42,6 +57,7 @@ class GatewayFactory:
         services: ServicesContainer,
     ) -> None:
         dependencies = [app, config, session, storage, bot, i18n, services]
+        self._plan_service = services.plan
 
         gateways = [
             (config.shop.PAYMENT_STARS_ENABLED, TelegramStars),

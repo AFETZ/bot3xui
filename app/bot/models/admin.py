@@ -100,3 +100,9 @@ class AdminUserDetails:
     referrer_tg_id: int | None
     trial_used: bool
     source_invite_name: str | None
+    is_blocked: bool = False
+    personal_discount_percent: int = 0
+    server_host: str | None = None
+    server_online: bool | None = None
+    activated_promocodes: list[str] = field(default_factory=list)
+    latest_transactions: list[str] = field(default_factory=list)

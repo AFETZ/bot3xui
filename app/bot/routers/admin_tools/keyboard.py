@@ -8,7 +8,7 @@ from app.bot.routers.misc.keyboard import (
     cancel_button,
 )
 from app.bot.utils.navigation import NavAdminTools
-from app.bot.models import AdminUserEditorOverview, AdminUserListPage
+from app.bot.models import AdminUserEditorOverview, AdminUserListPage, Plan
 from app.db.models import Server
 from app.db.models.invite import Invite
 
@@ -48,6 +48,12 @@ def admin_tools_keyboard(is_dev: bool) -> InlineKeyboardMarkup:
         InlineKeyboardButton(
             text=_("admin_tools:button:promocode_editor"),
             callback_data=NavAdminTools.PROMOCODE_EDITOR,
+        )
+    )
+    builder.row(
+        InlineKeyboardButton(
+            text="📦 Тарифы и платежи",
+            callback_data=NavAdminTools.PLAN_EDITOR,
         )
     )
     builder.row(
@@ -510,7 +516,7 @@ def user_list_keyboard(
     return builder.as_markup()
 
 
-def user_details_keyboard(tg_id: int) -> InlineKeyboardMarkup:
+def user_details_keyboard(tg_id: int, *, is_blocked: bool = False) -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
 
     builder.row(
@@ -521,6 +527,22 @@ def user_details_keyboard(tg_id: int) -> InlineKeyboardMarkup:
     )
     builder.row(
         InlineKeyboardButton(
+            text="✏️ Изменить подписку",
+            callback_data=f"{NavAdminTools.USER_EDIT_SUBSCRIPTION.value}:{tg_id}",
+        )
+    )
+    builder.row(
+        InlineKeyboardButton(
+            text="🔓 Разблокировать" if is_blocked else "🔒 Заблокировать",
+            callback_data=f"{NavAdminTools.USER_TOGGLE_BLOCK.value}:{tg_id}",
+        ),
+        InlineKeyboardButton(
+            text="🏷️ Персональная скидка",
+            callback_data=f"{NavAdminTools.USER_SET_DISCOUNT.value}:{tg_id}",
+        ),
+    )
+    builder.row(
+        InlineKeyboardButton(
             text=_("user_editor:button:open_in_tg"),
             url=f"tg://user?id={tg_id}",
         )
@@ -528,6 +550,133 @@ def user_details_keyboard(tg_id: int) -> InlineKeyboardMarkup:
 
     builder.row(back_button(NavAdminTools.USER_BACK))
     builder.row(back_button(NavAdminTools.USER_EDITOR, _("user_editor:button:back_to_editor")))
+    return builder.as_markup()
+
+
+def user_plan_keyboard(tg_id: int, plans: list[Plan]) -> InlineKeyboardMarkup:
+    builder = InlineKeyboardBuilder()
+    for plan in plans:
+        visibility = "👁" if plan.is_public else "🙈"
+        profile = " + БС" if plan.includes_additional_profile else ""
+        builder.row(
+            InlineKeyboardButton(
+                text=f"{visibility} {plan.code} · {plan.title or plan.devices}{profile}",
+                callback_data=f"{NavAdminTools.USER_SET_PLAN.value}:{tg_id}:{plan.code}",
+            )
+        )
+
+    builder.row(back_button(NavAdminTools.USER_DETAILS + f"_{tg_id}"))
+    return builder.as_markup()
+
+
+def user_plan_duration_keyboard(tg_id: int, plan: Plan, durations: list[int]) -> InlineKeyboardMarkup:
+    builder = InlineKeyboardBuilder()
+    for duration in plan.get_available_durations(durations):
+        builder.add(
+            InlineKeyboardButton(
+                text=f"{duration} дн.",
+                callback_data=f"{NavAdminTools.USER_SET_PLAN_DURATION.value}:{tg_id}:{plan.code}:{duration}",
+            )
+        )
+    builder.adjust(3)
+    builder.row(back_button(f"{NavAdminTools.USER_EDIT_SUBSCRIPTION.value}:{tg_id}"))
+    return builder.as_markup()
+
+
+def user_plan_confirm_keyboard(tg_id: int, plan_code: str, duration: int) -> InlineKeyboardMarkup:
+    builder = InlineKeyboardBuilder()
+    builder.row(
+        InlineKeyboardButton(
+            text="✅ Применить",
+            callback_data=f"{NavAdminTools.USER_CONFIRM_PLAN.value}:{tg_id}:{plan_code}:{duration}",
+        )
+    )
+    builder.row(back_button(f"{NavAdminTools.USER_SET_PLAN.value}:{tg_id}:{plan_code}"))
+    return builder.as_markup()
+
+
+def plan_editor_keyboard() -> InlineKeyboardMarkup:
+    builder = InlineKeyboardBuilder()
+    builder.row(
+        InlineKeyboardButton(text="📋 Список тарифов", callback_data=NavAdminTools.PLAN_LIST),
+    )
+    builder.row(
+        InlineKeyboardButton(text="➕ Добавить тариф", callback_data=NavAdminTools.PLAN_ADD),
+    )
+    builder.row(
+        InlineKeyboardButton(text="💳 Порядок платежей", callback_data=NavAdminTools.PAYMENT_ORDER),
+    )
+    builder.row(back_button(NavAdminTools.MAIN))
+    builder.row(back_to_main_menu_button())
+    return builder.as_markup()
+
+
+def plan_list_keyboard(plans: list[Plan]) -> InlineKeyboardMarkup:
+    builder = InlineKeyboardBuilder()
+    for plan in plans:
+        visibility = "👁" if plan.is_public else "🙈"
+        addon = " + БС" if plan.includes_additional_profile else ""
+        popular = " 🔥" if plan.is_popular else ""
+        builder.row(
+            InlineKeyboardButton(
+                text=f"{visibility} {plan.code}{popular} · {plan.title or plan.devices}{addon}",
+                callback_data=f"{NavAdminTools.PLAN_SHOW.value}:{plan.code}",
+            )
+        )
+    builder.row(back_button(NavAdminTools.PLAN_EDITOR))
+    return builder.as_markup()
+
+
+def plan_details_keyboard(plan_code: str) -> InlineKeyboardMarkup:
+    builder = InlineKeyboardBuilder()
+    builder.row(
+        InlineKeyboardButton(
+            text="✏️ Редактировать JSON",
+            callback_data=f"{NavAdminTools.PLAN_EDIT_JSON.value}:{plan_code}",
+        )
+    )
+    builder.row(
+        InlineKeyboardButton(
+            text="🗑 Удалить",
+            callback_data=f"{NavAdminTools.PLAN_DELETE.value}:{plan_code}",
+        )
+    )
+    builder.row(back_button(NavAdminTools.PLAN_LIST))
+    return builder.as_markup()
+
+
+def confirm_delete_plan_keyboard(plan_code: str) -> InlineKeyboardMarkup:
+    builder = InlineKeyboardBuilder()
+    builder.row(
+        InlineKeyboardButton(
+            text="✅ Да, удалить",
+            callback_data=f"{NavAdminTools.PLAN_CONFIRM_DELETE.value}:{plan_code}",
+        )
+    )
+    builder.row(cancel_button(f"{NavAdminTools.PLAN_SHOW.value}:{plan_code}"))
+    return builder.as_markup()
+
+
+def payment_order_keyboard(gateways: list) -> InlineKeyboardMarkup:
+    builder = InlineKeyboardBuilder()
+    for index, gateway in enumerate(gateways, start=1):
+        builder.row(
+            InlineKeyboardButton(
+                text=f"{index}. {gateway.name}",
+                callback_data=NavAdminTools.PAYMENT_ORDER,
+            )
+        )
+        builder.row(
+            InlineKeyboardButton(
+                text="⬆️",
+                callback_data=f"{NavAdminTools.PAYMENT_MOVE_UP.value}:{gateway.callback}",
+            ),
+            InlineKeyboardButton(
+                text="⬇️",
+                callback_data=f"{NavAdminTools.PAYMENT_MOVE_DOWN.value}:{gateway.callback}",
+            ),
+        )
+    builder.row(back_button(NavAdminTools.PLAN_EDITOR))
     return builder.as_markup()
 
 

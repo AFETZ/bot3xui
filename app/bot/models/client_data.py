@@ -16,6 +16,7 @@ class ClientData:
         traffic_up: int,
         traffic_down: int,
         expiry_time: str,
+        enabled: bool = True,
     ) -> None:
         self._max_devices = max_devices
         self._traffic_total = traffic_total
@@ -24,13 +25,14 @@ class ClientData:
         self._traffic_up = traffic_up
         self._traffic_down = traffic_down
         self._expiry_time = expiry_time
+        self._enabled = enabled
 
     def __str__(self) -> str:
         return (
             f"ClientData(max_devices={self._max_devices}, traffic_total={self._traffic_total}, "
             f"traffic_remaining={self._traffic_remaining}, traffic_used={self._traffic_used}, "
             f"traffic_up={self._traffic_up}, traffic_down={self._traffic_down}, "
-            f"expiry_time={self._expiry_time})"
+            f"expiry_time={self._expiry_time}, enabled={self._enabled})"
         )
 
     @property
@@ -71,6 +73,10 @@ class ClientData:
     @property
     def expiry_timestamp(self) -> int:
         return self._expiry_time
+
+    @property
+    def enabled(self) -> bool:
+        return self._enabled
 
     @property
     def has_subscription_expired(self) -> bool:

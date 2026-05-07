@@ -275,3 +275,68 @@ def test_get_plan_changes_keeps_targets_with_their_own_supported_durations(tmp_p
     service = plan_module.PlanService()
 
     assert [plan.code for plan in service.get_plan_changes("p3", 30, "RUB")] == ["p5"]
+
+
+def test_plan_service_can_add_update_delete_plans_at_runtime(tmp_path, monkeypatch):
+    plans_file = tmp_path / "plans.json"
+    plans_file.write_text(
+        json.dumps({"durations": [30], "plans": []}),
+        encoding="utf-8",
+    )
+
+    monkeypatch.setattr(plan_module, "DEFAULT_PLANS_DIR", tmp_path / "app" / "data" / "plans.json")
+    monkeypatch.setattr(plan_module, "BASE_DIR", tmp_path / "app")
+
+    service = plan_module.PlanService()
+    service.add_plan(
+        plan_module.Plan(
+            code="p10",
+            devices=10,
+            title="10 устройств",
+            prices={"RUB": {30: 999}},
+        )
+    )
+
+    assert service.get_plan_by_code("p10").devices == 10
+    assert json.loads(plans_file.read_text(encoding="utf-8"))["plans"][0]["code"] == "p10"
+
+    service.update_plan(
+        "p10",
+        plan_module.Plan(
+            code="p10",
+            devices=12,
+            title="12 устройств",
+            prices={"RUB": {30: 1299}},
+        ),
+    )
+
+    assert service.get_plan_by_code("p10").devices == 12
+    assert json.loads(plans_file.read_text(encoding="utf-8"))["plans"][0]["devices"] == 12
+
+    service.delete_plan("p10")
+
+    assert service.get_plan_by_code("p10") is None
+    assert json.loads(plans_file.read_text(encoding="utf-8"))["plans"] == []
+
+
+def test_plan_service_persists_payment_order(tmp_path, monkeypatch):
+    plans_file = tmp_path / "plans.json"
+    plans_file.write_text(
+        json.dumps({"durations": [30], "plans": [], "payment_order": ["pay_yookassa", "pay_telegram_stars"]}),
+        encoding="utf-8",
+    )
+
+    monkeypatch.setattr(plan_module, "DEFAULT_PLANS_DIR", tmp_path / "app" / "data" / "plans.json")
+    monkeypatch.setattr(plan_module, "BASE_DIR", tmp_path / "app")
+
+    service = plan_module.PlanService()
+
+    assert service.get_payment_order()[:2] == ["pay_yookassa", "pay_telegram_stars"]
+
+    service.move_payment_method("pay_telegram_stars", -1)
+
+    assert service.get_payment_order()[:2] == ["pay_telegram_stars", "pay_yookassa"]
+    assert json.loads(plans_file.read_text(encoding="utf-8"))["payment_order"][:2] == [
+        "pay_telegram_stars",
+        "pay_yookassa",
+    ]

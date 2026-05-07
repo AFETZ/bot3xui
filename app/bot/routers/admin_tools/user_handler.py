@@ -1,4 +1,5 @@
 import logging
+from html import escape
 
 from aiogram import F, Router
 from aiogram.fsm.context import FSMContext
@@ -17,6 +18,7 @@ from app.bot.utils.navigation import NavAdminTools
 from app.db.models import User
 
 from .keyboard import user_details_keyboard, user_editor_keyboard, user_list_keyboard
+from .keyboard import user_plan_confirm_keyboard, user_plan_duration_keyboard, user_plan_keyboard
 
 logger = logging.getLogger(__name__)
 router = Router(name=__name__)
@@ -33,6 +35,10 @@ class UserSearchStates(StatesGroup):
 
 class UserMessageStates(StatesGroup):
     waiting_message = State()
+
+
+class UserDiscountStates(StatesGroup):
+    waiting_discount = State()
 
 
 @router.callback_query(F.data == NavAdminTools.USER_EDITOR, IsAdmin())
@@ -153,7 +159,8 @@ async def handle_user_search(
     services: ServicesContainer,
     gateway_factory: GatewayFactory,
 ) -> None:
-    query_text = (message.text or "").strip()
+    forwarded_user_id = _extract_forwarded_user_id(message)
+    query_text = str(forwarded_user_id) if forwarded_user_id else (message.text or "").strip()
     logger.info("Admin %s searching for: %s", user.tg_id, query_text)
 
     data = await state.get_data()
@@ -343,6 +350,248 @@ async def handle_user_send_message(
         )
 
 
+@router.callback_query(F.data.startswith(NavAdminTools.USER_EDIT_SUBSCRIPTION.value + ":"), IsAdmin())
+async def callback_user_edit_subscription(
+    callback: CallbackQuery,
+    user: User,
+    session: AsyncSession,
+    services: ServicesContainer,
+) -> None:
+    target_tg_id = int(callback.data.split(":")[1])
+    target = await User.get(session=session, tg_id=target_tg_id)
+    if not target:
+        await callback.answer(text=_("user_editor:popup:user_not_found"), show_alert=True)
+        return
+
+    await callback.message.edit_text(
+        text=(
+            "✏️ <b>Изменить подписку пользователя</b>\n\n"
+            f"Пользователь: <code>{target.tg_id}</code>\n"
+            "Выберите тариф. После выбора срока бот пересоздаст/обновит клиента в 3X-UI "
+            "и запишет тариф в карточку пользователя."
+        ),
+        reply_markup=user_plan_keyboard(
+            tg_id=target_tg_id,
+            plans=services.plan.get_all_plan_records(),
+        ),
+    )
+
+
+@router.callback_query(F.data.startswith(NavAdminTools.USER_SET_PLAN.value + ":"), IsAdmin())
+async def callback_user_set_plan(
+    callback: CallbackQuery,
+    user: User,
+    services: ServicesContainer,
+) -> None:
+    _, target_tg_id, plan_code = callback.data.split(":", 2)
+    plan = services.plan.get_plan_by_code(plan_code)
+    if not plan:
+        await callback.answer(text="Тариф не найден.", show_alert=True)
+        return
+
+    await callback.message.edit_text(
+        text=(
+            "✏️ <b>Изменить подписку пользователя</b>\n\n"
+            f"Пользователь: <code>{target_tg_id}</code>\n"
+            f"Тариф: <b>{plan.title or plan.code}</b>\n"
+            "Выберите срок подписки."
+        ),
+        reply_markup=user_plan_duration_keyboard(
+            tg_id=int(target_tg_id),
+            plan=plan,
+            durations=services.plan.get_durations(),
+        ),
+    )
+
+
+@router.callback_query(F.data.startswith(NavAdminTools.USER_SET_PLAN_DURATION.value + ":"), IsAdmin())
+async def callback_user_set_plan_duration(
+    callback: CallbackQuery,
+    user: User,
+    services: ServicesContainer,
+) -> None:
+    _, target_tg_id, plan_code, duration_raw = callback.data.split(":", 3)
+    plan = services.plan.get_plan_by_code(plan_code)
+    if not plan:
+        await callback.answer(text="Тариф не найден.", show_alert=True)
+        return
+
+    duration = int(duration_raw)
+    await callback.message.edit_text(
+        text=(
+            "⚠️ <b>Подтвердите изменение подписки</b>\n\n"
+            f"Пользователь: <code>{target_tg_id}</code>\n"
+            f"Тариф: <b>{plan.title or plan.code}</b>\n"
+            f"Устройств: <b>{plan.devices}</b>\n"
+            f"Срок: <b>{duration} дн.</b>\n\n"
+            "Текущий клиент в 3X-UI будет обновлен: лимит устройств и срок будут заменены."
+        ),
+        reply_markup=user_plan_confirm_keyboard(
+            tg_id=int(target_tg_id),
+            plan_code=plan_code,
+            duration=duration,
+        ),
+    )
+
+
+@router.callback_query(F.data.startswith(NavAdminTools.USER_CONFIRM_PLAN.value + ":"), IsAdmin())
+async def callback_user_confirm_plan(
+    callback: CallbackQuery,
+    user: User,
+    session: AsyncSession,
+    services: ServicesContainer,
+    gateway_factory: GatewayFactory,
+) -> None:
+    _, target_tg_id_raw, plan_code, duration_raw = callback.data.split(":", 3)
+    target_tg_id = int(target_tg_id_raw)
+    duration = int(duration_raw)
+    target = await User.get(session=session, tg_id=target_tg_id)
+    plan = services.plan.get_plan_by_code(plan_code)
+    if not target or not plan:
+        await callback.answer(text="Пользователь или тариф не найден.", show_alert=True)
+        return
+
+    success = await services.vpn.create_subscription(
+        user=target,
+        devices=plan.devices,
+        duration=duration,
+    )
+    if not success:
+        await callback.answer(text="Не удалось обновить клиента в 3X-UI.", show_alert=True)
+        return
+
+    await services.subscription.update_current_plan(
+        user=target,
+        plan_code=plan.code,
+        refresh_period=True,
+        period_duration_days=duration,
+    )
+    session.expire_all()
+    await callback.answer(text="Подписка обновлена.")
+    await _render_user_details(
+        chat_id=callback.message.chat.id,
+        message_id=callback.message.message_id,
+        tg_id=target_tg_id,
+        session=session,
+        services=services,
+        gateway_factory=gateway_factory,
+        bot=callback.bot,
+    )
+
+
+@router.callback_query(F.data.startswith(NavAdminTools.USER_TOGGLE_BLOCK.value + ":"), IsAdmin())
+async def callback_user_toggle_block(
+    callback: CallbackQuery,
+    user: User,
+    session: AsyncSession,
+    services: ServicesContainer,
+    gateway_factory: GatewayFactory,
+) -> None:
+    target_tg_id = int(callback.data.split(":")[1])
+    target = await User.get(session=session, tg_id=target_tg_id)
+    if not target:
+        await callback.answer(text=_("user_editor:popup:user_not_found"), show_alert=True)
+        return
+
+    should_block = not target.is_blocked
+    if target.server_id:
+        vpn_updated = await services.vpn.set_client_enabled(target, enabled=not should_block)
+        if not vpn_updated:
+            await callback.answer(text="Не удалось обновить клиента в 3X-UI.", show_alert=True)
+            return
+
+    await User.update(session=session, tg_id=target_tg_id, is_blocked=should_block)
+    session.expire_all()
+    await callback.answer(text="Пользователь заблокирован." if should_block else "Пользователь разблокирован.")
+    await _render_user_details(
+        chat_id=callback.message.chat.id,
+        message_id=callback.message.message_id,
+        tg_id=target_tg_id,
+        session=session,
+        services=services,
+        gateway_factory=gateway_factory,
+        bot=callback.bot,
+    )
+
+
+@router.callback_query(F.data.startswith(NavAdminTools.USER_SET_DISCOUNT.value + ":"), IsAdmin())
+async def callback_user_set_discount(
+    callback: CallbackQuery,
+    user: User,
+    state: FSMContext,
+) -> None:
+    target_tg_id = int(callback.data.split(":")[1])
+    await state.set_state(UserDiscountStates.waiting_discount)
+    await state.update_data(
+        {
+            MAIN_MESSAGE_ID_KEY: callback.message.message_id,
+            USER_TARGET_TG_ID_KEY: target_tg_id,
+        }
+    )
+    await callback.message.edit_text(
+        text=(
+            "🏷️ <b>Персональная скидка</b>\n\n"
+            f"Пользователь: <code>{target_tg_id}</code>\n"
+            "Введите процент скидки от 0 до 95. 0 отключает персональную скидку."
+        ),
+        reply_markup=back_keyboard(NavAdminTools.USER_DETAILS + f"_{target_tg_id}"),
+    )
+
+
+@router.message(UserDiscountStates.waiting_discount, IsAdmin())
+async def handle_user_discount(
+    message: Message,
+    user: User,
+    state: FSMContext,
+    session: AsyncSession,
+    services: ServicesContainer,
+    gateway_factory: GatewayFactory,
+) -> None:
+    data = await state.get_data()
+    target_tg_id = int(data.get(USER_TARGET_TG_ID_KEY))
+    main_message_id = data.get(MAIN_MESSAGE_ID_KEY)
+
+    try:
+        discount = int((message.text or "").strip())
+    except ValueError:
+        await services.notification.notify_by_message(
+            message=message,
+            text="Введите число от 0 до 95.",
+            duration=5,
+        )
+        return
+
+    if discount < 0 or discount > 95:
+        await services.notification.notify_by_message(
+            message=message,
+            text="Скидка должна быть от 0 до 95.",
+            duration=5,
+        )
+        return
+
+    await User.update(
+        session=session,
+        tg_id=target_tg_id,
+        personal_discount_percent=discount,
+    )
+    session.expire_all()
+    await state.set_state(None)
+    await _render_user_details(
+        chat_id=message.chat.id,
+        message_id=main_message_id,
+        tg_id=target_tg_id,
+        session=session,
+        services=services,
+        gateway_factory=gateway_factory,
+        bot=message.bot,
+    )
+    await services.notification.notify_by_message(
+        message=message,
+        text="Скидка сохранена.",
+        duration=5,
+    )
+
+
 async def _render_filter_page(
     *,
     callback_message,
@@ -471,7 +720,7 @@ async def _render_user_details(
         text=_build_user_details_text(details),
         chat_id=chat_id,
         message_id=message_id,
-        reply_markup=user_details_keyboard(details.tg_id),
+        reply_markup=user_details_keyboard(details.tg_id, is_blocked=details.is_blocked),
     )
 
 
@@ -523,7 +772,7 @@ def _build_user_details_text(details: AdminUserDetails) -> str:
         else _("user_editor:detail:no_referrer")
     )
 
-    return _("user_editor:message:details").format(
+    base_text = _("user_editor:message:details").format(
         first_name=details.first_name,
         tg_id=details.tg_id,
         tg_link=tg_link,
@@ -545,6 +794,25 @@ def _build_user_details_text(details: AdminUserDetails) -> str:
         trial_used="+" if details.trial_used else "—",
         source_invite=details.source_invite_name or "—",
     )
+    block_text = "да" if details.is_blocked else "нет"
+    server_status = (
+        "🟢 online" if details.server_online else "🔴 offline"
+        if details.server_online is not None else "—"
+    )
+    extra_lines = [
+        "",
+        f"<b>Блокировка:</b> {block_text}",
+        f"<b>Персональная скидка:</b> {details.personal_discount_percent}%",
+        f"<b>Server host:</b> <code>{escape(details.server_host or '—')}</code>",
+        f"<b>Server status:</b> {server_status}",
+        "",
+        "<b>Последние платежи:</b>",
+        _format_admin_list(details.latest_transactions),
+        "",
+        "<b>Активированные промокоды:</b>",
+        _format_admin_list(details.activated_promocodes),
+    ]
+    return base_text + "\n".join(extra_lines)
 
 
 def _resolve_filter_type(callback_data: str) -> str:
@@ -589,3 +857,22 @@ def _format_revenue(revenue_by_currency: dict[str, float]) -> str:
 
 def _get_payment_method_currencies(gateway_factory: GatewayFactory) -> dict[str, str]:
     return {gateway.callback: gateway.currency.code for gateway in gateway_factory.get_gateways()}
+
+
+def _format_admin_list(items: list[str]) -> str:
+    if not items:
+        return "• —"
+    return "\n".join(f"• <code>{escape(item)}</code>" for item in items)
+
+
+def _extract_forwarded_user_id(message: Message) -> int | None:
+    forward_from = getattr(message, "forward_from", None)
+    if forward_from and getattr(forward_from, "id", None):
+        return int(forward_from.id)
+
+    forward_origin = getattr(message, "forward_origin", None)
+    sender_user = getattr(forward_origin, "sender_user", None)
+    if sender_user and getattr(sender_user, "id", None):
+        return int(sender_user.id)
+
+    return None

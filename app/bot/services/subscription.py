@@ -133,7 +133,12 @@ class SubscriptionService:
                 )
 
         plan = self._resolve_plan_from_user(user=user, client_data=client_data)
-        is_active = bool(client_data and not client_data.has_subscription_expired)
+        is_active = bool(
+            client_data
+            and client_data.enabled
+            and not client_data.has_subscription_expired
+            and not getattr(user, "is_blocked", False)
+        )
         expiry_timestamp = client_data.expiry_timestamp if client_data else None
 
         period_duration_days = user.current_period_duration_days
@@ -188,6 +193,26 @@ class SubscriptionService:
 
     def get_payment_plan(self, plan_code: str | None, devices: int) -> Plan | None:
         return self.plan_service.get_plan_by_code(plan_code) or self.plan_service.get_plan(devices)
+
+    @staticmethod
+    def apply_personal_discount(
+        *,
+        user: User,
+        price: float | int,
+        currency: Currency | str,
+    ) -> float | int:
+        discount_percent = max(
+            0,
+            min(int(getattr(user, "personal_discount_percent", 0) or 0), 95),
+        )
+        if discount_percent <= 0 or price <= 0:
+            return price
+
+        discounted_price = float(price) * (100 - discount_percent) / 100
+        normalized_price = normalize_price(discounted_price, currency)
+        if normalized_price <= 0:
+            return 1
+        return normalized_price
 
     def _get_supported_plan_durations(self, *plans: Plan) -> list[int]:
         durations: set[int] = set()

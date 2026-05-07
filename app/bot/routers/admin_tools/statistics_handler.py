@@ -46,7 +46,7 @@ async def callback_statistics_period(
     services: ServicesContainer,
     gateway_factory: GatewayFactory,
 ) -> None:
-    period_code = callback.data.removeprefix(f"{NavAdminTools.STATISTICS_PERIOD}_")
+    period_code = callback.data.removeprefix(f"{NavAdminTools.STATISTICS_PERIOD.value}_")
     logger.info("Admin %s switched statistics period to %s.", user.tg_id, period_code)
     await _render_statistics(
         callback=callback,
