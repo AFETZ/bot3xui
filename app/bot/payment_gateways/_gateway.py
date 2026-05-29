@@ -49,7 +49,11 @@ class PaymentGateway(ABC):
         self.services = services
 
     @abstractmethod
-    async def create_payment(self, data: SubscriptionData) -> str:
+    async def create_payment(
+        self,
+        data: SubscriptionData,
+        return_url: str | None = None,
+    ) -> str:
         pass
 
     @abstractmethod

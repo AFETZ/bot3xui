@@ -1,4 +1,5 @@
 import logging
+from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 
 from aiogram.utils.i18n import I18n
@@ -10,6 +11,56 @@ from app.bot.services import NotificationService, VPNService
 from app.db.models import User
 
 logger = logging.getLogger(__name__)
+
+EXPIRY_NOTIFICATION_TTL = timedelta(days=2)
+
+
+@dataclass(frozen=True)
+class ExpiryNotificationThreshold:
+    name: str
+    window: timedelta
+    message_key: str
+
+
+EXPIRY_NOTIFICATION_THRESHOLDS = (
+    ExpiryNotificationThreshold(
+        name="3h",
+        window=timedelta(hours=3),
+        message_key="task:message:subscription_expiry_urgent",
+    ),
+    ExpiryNotificationThreshold(
+        name="24h",
+        window=timedelta(hours=24),
+        message_key="task:message:subscription_expiry",
+    ),
+)
+
+
+def _select_expiry_notification(
+    time_left: timedelta,
+) -> ExpiryNotificationThreshold | None:
+    if time_left <= timedelta(0):
+        return None
+
+    for threshold in EXPIRY_NOTIFICATION_THRESHOLDS:
+        if time_left <= threshold.window:
+            return threshold
+
+    return None
+
+
+def _expiry_notification_key(
+    tg_id: int,
+    expiry_time: int,
+    threshold: ExpiryNotificationThreshold,
+) -> str:
+    return (
+        f"user:notified:subscription_expiry:{tg_id}:{expiry_time}:{threshold.name}"
+    )
+
+
+def _legacy_expiry_notification_key(tg_id: int) -> str:
+    return f"user:notified:{tg_id}"
 
 
 async def notify_users_with_expiring_subscription(
@@ -28,12 +79,6 @@ async def notify_users_with_expiring_subscription(
         )
 
         for user in users:
-            user_notified_key = f"user:notified:{user.tg_id}"
-
-            # Check if user was recently notified
-            if await redis.get(user_notified_key):
-                continue
-
             client_data = await vpn_service.get_client_data(user)
 
             # Skip if no client data or subscription is unlimited
@@ -46,8 +91,24 @@ async def notify_users_with_expiring_subscription(
             )
             time_left = expiry_datetime - now
 
-            # Skip if not within the notification threshold
-            if not (timedelta(0) < time_left <= timedelta(hours=24)):
+            threshold = _select_expiry_notification(time_left)
+            if threshold is None:
+                continue
+
+            user_notified_key = _expiry_notification_key(
+                user.tg_id,
+                client_data._expiry_time,
+                threshold,
+            )
+
+            # Check if user was already notified for this expiry timestamp.
+            if await redis.get(user_notified_key):
+                continue
+
+            if (
+                threshold.name == "24h"
+                and await redis.get(_legacy_expiry_notification_key(user.tg_id))
+            ):
                 continue
 
             # BUG: The button and expiry_time will not be translated
@@ -55,7 +116,7 @@ async def notify_users_with_expiring_subscription(
             await notification_service.notify_by_id(
                 chat_id=user.tg_id,
                 text=i18n.gettext(
-                    "task:message:subscription_expiry",
+                    threshold.message_key,
                     locale=user.language_code,
                 ).format(
                     devices=client_data.max_devices,
@@ -64,9 +125,11 @@ async def notify_users_with_expiring_subscription(
                 # reply_markup=keyboard_extend
             )
 
-            await redis.set(user_notified_key, "true", ex=timedelta(hours=24))
+            await redis.set(user_notified_key, "true", ex=EXPIRY_NOTIFICATION_TTL)
             logger.info(
-                f"[Background task] Sent expiry notification to user {user.tg_id}."
+                "[Background task] Sent %s expiry notification to user %s.",
+                threshold.name,
+                user.tg_id,
             )
         logger.info("[Background task] Subscription check finished.")
 

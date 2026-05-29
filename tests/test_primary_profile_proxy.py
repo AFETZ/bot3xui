@@ -75,16 +75,21 @@ async def test_proxy_returns_503_when_status_check_failed():
 
 
 @pytest.mark.asyncio
-async def test_proxy_returns_403_when_subscription_inactive():
-    user = SimpleNamespace(tg_id=1)
+async def test_proxy_returns_renewal_profile_when_subscription_inactive():
+    user = SimpleNamespace(tg_id=1, vpn_id="vpn-1")
     status = SimpleNamespace(status_check_ok=True, is_active=False)
     service = SimpleNamespace(
-        get_subscription_status_by_vpn_id=AsyncMock(return_value=(user, status))
+        get_subscription_status_by_vpn_id=AsyncMock(return_value=(user, status)),
+        get_cabinet_url=lambda user: f"https://bot.example/cabinet/{user.vpn_id}",
     )
     proxy = PrimaryProfileProxy(subscription_service=service)
 
-    with pytest.raises(web.HTTPForbidden):
-        await proxy.handle(make_request())
+    response = await proxy.handle(make_request())
+
+    assert response.status == 200
+    assert b"Subscription expired" in response.body
+    assert response.headers["profile-web-page-url"] == "https://bot.example/cabinet/vpn-1"
+    assert response.headers["support-url"] == "https://bot.example/cabinet/vpn-1"
 
 
 @pytest.mark.asyncio
@@ -185,6 +190,59 @@ async def test_proxy_keeps_plain_profile_body_unchanged(monkeypatch):
 
     assert response.body == upstream_body
     assert response.headers["profile-title"] == "Name VPN"
+
+
+@pytest.mark.asyncio
+async def test_proxy_overrides_profile_title_with_selected_server(monkeypatch):
+    user = SimpleNamespace(
+        tg_id=1,
+        server=SimpleNamespace(name="Kazakhstan", location="KZ"),
+    )
+    status = SimpleNamespace(status_check_ok=True, is_active=True)
+    service = SimpleNamespace(
+        get_subscription_status_by_vpn_id=AsyncMock(return_value=(user, status)),
+        get_upstream_profile_url=AsyncMock(return_value="https://xui.example/sub/vpn-1"),
+    )
+    proxy = PrimaryProfileProxy(subscription_service=service)
+
+    monkeypatch.setattr(
+        "app.web.primary_profile.aiohttp.ClientSession",
+        lambda **kwargs: FakeClientSession(
+            response=FakeUpstreamResponse(
+                body=b"vless://abc\n",
+                headers={"Profile-Title": "Old title"},
+            )
+        ),
+    )
+
+    response = await proxy.handle(make_request("vpn-allowed"))
+
+    assert response.headers["profile-title"] == "AFZVPN Kazakhstan"
+
+
+@pytest.mark.asyncio
+async def test_proxy_uses_selected_server_name_when_location_is_unknown(monkeypatch):
+    user = SimpleNamespace(
+        tg_id=1,
+        server=SimpleNamespace(name="Finland", location=None),
+    )
+    status = SimpleNamespace(status_check_ok=True, is_active=True)
+    service = SimpleNamespace(
+        get_subscription_status_by_vpn_id=AsyncMock(return_value=(user, status)),
+        get_upstream_profile_url=AsyncMock(return_value="https://xui.example/sub/vpn-1"),
+    )
+    proxy = PrimaryProfileProxy(subscription_service=service)
+
+    monkeypatch.setattr(
+        "app.web.primary_profile.aiohttp.ClientSession",
+        lambda **kwargs: FakeClientSession(
+            response=FakeUpstreamResponse(body=b"vless://abc\n")
+        ),
+    )
+
+    response = await proxy.handle(make_request("vpn-allowed"))
+
+    assert response.headers["profile-title"] == "AFZVPN Finland"
 
 
 @pytest.mark.asyncio

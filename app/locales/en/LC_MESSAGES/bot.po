@@ -960,16 +960,22 @@ msgstr ""
 "\n"
 "<b>🌐 Connecting whitelist bypass:</b>\n"
 "<i>(available on plans with whitelist bypass)</i>\n"
-"1. Tap '🌐 Connect whitelist bypass' below — the second key will be "
+"1. Tap '🌐 Connect whitelist bypass' below — the Universal profile will be "
 "automatically added to Happ\n"
 "2. Or copy the key from '👤 Profile' → '🌐 Show whitelist bypass key' "
 "and paste it manually\n"
 "3. In Happ you will have two profiles — main and whitelist bypass\n"
-"4. Switch to the whitelist bypass profile\n"
-"5. Tap the 🔄 refresh icon to update the server list\n"
-"6. Tap the ping icon next to it — check latency for all servers\n"
-"7. Select the server with the lowest latency (around 200 ms) and enable VPN\n"
-"8. If the selected server doesn't work — try the next one by latency\n"
+"4. Use the main profile as usual. Switch to the bypass profile only when "
+"whitelist bypass is needed\n"
+"5. The bypass profile is configured to auto-update every hour; you can also "
+"refresh the list manually with the 🔄 icon\n"
+"6. If bypass refresh times out without VPN, enable the main profile first and "
+"refresh the bypass profile again\n"
+"7. When Happ opens, bypass-profile servers are checked with ping automatically\n"
+"8. When whitelist bypass is needed, open the bypass profile and choose an "
+"available server with the lowest latency\n"
+"9. If the selected server stops working, choose the next available server by "
+"ping\n"
 "\n"
 "<b>⚠️ Important:</b> whitelist bypass is provided as is, without "
 "guarantees of stable operation."
@@ -1130,6 +1136,17 @@ msgstr ""
 "🔑 <b>Your key:</b> <i>(Closes after {seconds_text})</i>\n"
 "<pre>{key}</pre>"
 
+#: app/bot/routers/profile/handler.py:111
+msgid "profile:message:server_selection"
+msgstr ""
+"🌍 <b>Select connection server</b>\n"
+"\n"
+"Current server: {server}"
+
+#: app/bot/routers/profile/keyboard.py:16
+msgid "profile:message:server_unknown"
+msgstr "Unknown server"
+
 #: app/bot/routers/profile/handler.py:85
 msgid "10 seconds"
 msgstr ""
@@ -1157,9 +1174,49 @@ msgstr "🌐 Show whitelist bypass key"
 msgid "profile:button:connect"
 msgstr "🔌 Connect"
 
+#: app/bot/routers/profile/keyboard.py:46
+msgid "profile:button:select_server"
+msgstr "🌍 Select server"
+
+#: app/bot/routers/profile/keyboard.py:76
+msgid "profile:button:back_to_profile"
+msgstr "◀️ Back to profile"
+
+#: app/bot/routers/profile/keyboard.py:21
+msgid "profile:server:finland"
+msgstr "Finland"
+
+#: app/bot/routers/profile/keyboard.py:23
+msgid "profile:server:kazakhstan"
+msgstr "Kazakhstan"
+
 #: app/bot/routers/profile/handler.py:91
 msgid "profile:popup:additional_key_unavailable"
 msgstr "Whitelist bypass is not available on your plan."
+
+#: app/bot/routers/profile/handler.py:102
+msgid "profile:popup:no_subscription_for_server_select"
+msgstr "Server selection is available only when you have a subscription."
+
+#: app/bot/routers/profile/handler.py:107
+msgid "profile:popup:no_servers_available"
+msgstr "No servers are available right now."
+
+#: app/bot/routers/profile/handler.py:143
+msgid "profile:popup:server_already_selected"
+msgstr "This server is already selected."
+
+#: app/bot/routers/profile/handler.py:144
+msgid "profile:popup:server_client_missing"
+msgstr "Your subscription is not available on this server yet."
+
+#: app/bot/routers/profile/handler.py:145
+msgid "profile:popup:server_unavailable"
+msgstr "This server is unavailable right now."
+
+#: app/bot/routers/profile/handler.py:158
+msgid "profile:popup:server_switched"
+msgstr "Server switched to {server}. Refresh the profile in your VPN app."
 
 #: app/bot/routers/referral/handler.py:35
 msgid "referral:message:user_summary"
@@ -1484,6 +1541,13 @@ msgstr ""
 "\n"
 "Devices: {devices}\n"
 "Expires in: {expiry_time}"
+
+#: app/bot/tasks/subscription_expiry.py:29
+msgid "task:message:subscription_expiry_urgent"
+msgstr ""
+"⚠️ <b>Your subscription will expire in {expiry_time}</b>\n"
+"\n"
+"After it expires, VPN access will become unavailable. If manual payment verification is required, renewal may take some time, so we recommend renewing now."
 
 #: app/bot/utils/formatting.py:18 app/bot/utils/formatting.py:20
 #: app/bot/utils/formatting.py:28

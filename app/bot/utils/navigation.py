@@ -12,6 +12,7 @@ class NavProfile(str, Enum):
     MAIN = "profile"
     SHOW_KEY = "show_key"
     SHOW_ADDITIONAL_KEY = "show_additional_key"
+    SELECT_SERVER = "select_server"
 
 
 class NavReferral(str, Enum):

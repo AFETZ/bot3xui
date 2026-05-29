@@ -50,7 +50,7 @@ services:
     environment:
       - REDIS_HOST=127.0.0.1
       - REDIS_PORT=6380
-      - BOT_PROXY_URL=socks5://127.0.0.1:10808
+      - BOT_PROXY_URL=${BOT_PROXY_URL:-}
     stop_signal: SIGINT
     restart: unless-stopped
     command: sh -c " 

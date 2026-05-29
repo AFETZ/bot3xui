@@ -58,9 +58,16 @@ class Yookassa(PaymentGateway):
         self.app.router.add_post(YOOKASSA_WEBHOOK, self.webhook_handler)
         logger.info("YooKassa payment gateway initialized.")
 
-    async def create_payment(self, data: SubscriptionData) -> str:
-        bot_username = (await self.bot.get_me()).username
-        redirect_url = f"https://t.me/{bot_username}"
+    async def create_payment(
+        self,
+        data: SubscriptionData,
+        return_url: str | None = None,
+    ) -> str:
+        if return_url:
+            redirect_url = return_url
+        else:
+            bot_username = (await self.bot.get_me()).username
+            redirect_url = f"https://t.me/{bot_username}"
 
         devices = format_device_count(data.devices)
         if data.is_change:

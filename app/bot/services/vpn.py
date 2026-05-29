@@ -6,6 +6,7 @@ if TYPE_CHECKING:
     from .server_pool import ServerPoolService
 
 import logging
+from dataclasses import dataclass
 
 from py3xui import Client, Inbound
 from sqlalchemy.ext.asyncio import async_sessionmaker
@@ -18,9 +19,16 @@ from app.bot.utils.time import (
     get_current_timestamp,
 )
 from app.config import Config
-from app.db.models import Promocode, User
+from app.db.models import Promocode, Server, User
 
 logger = logging.getLogger(__name__)
+
+
+@dataclass(frozen=True)
+class ServerSwitchResult:
+    success: bool
+    reason: str
+    server: Server | None = None
 
 
 class VPNService:
@@ -190,15 +198,72 @@ class VPNService:
             logger.debug(f"Server ID for user {user.tg_id} not found.")
             return None
 
+        scheme = (
+            self.config.xui.SUBSCRIPTION_SCHEME
+            if self.config.xui.SUBSCRIPTION_SCHEME
+            and user.server.host.startswith("http://")
+            else None
+        )
         subscription = extract_base_url(
             url=user.server.host,
             port=self.config.xui.SUBSCRIPTION_PORT,
             path=self.config.xui.SUBSCRIPTION_PATH,
-            scheme=self.config.xui.SUBSCRIPTION_SCHEME,
+            scheme=scheme,
         )
         key = f"{subscription}{user.vpn_id}"
         logger.debug(f"Fetched key for {user.tg_id}: {key}.")
         return key
+
+    async def switch_server(self, user: User, server_id: int) -> ServerSwitchResult:
+        if user.server_id == server_id:
+            return ServerSwitchResult(
+                success=False,
+                reason="already_selected",
+                server=user.server,
+            )
+
+        connection = await self.server_pool_service.get_connection_by_server_id(server_id)
+        if not connection or not connection.server.online:
+            return ServerSwitchResult(success=False, reason="unavailable")
+
+        try:
+            client = await connection.api.client.get_by_email(str(user.tg_id))
+        except Exception as exception:
+            logger.error(
+                "Failed to check client %s on server %s: %s",
+                user.tg_id,
+                connection.server.name,
+                exception,
+            )
+            return ServerSwitchResult(
+                success=False,
+                reason="unavailable",
+                server=connection.server,
+            )
+
+        if not client:
+            logger.warning(
+                "Cannot switch user %s to server %s: client not found.",
+                user.tg_id,
+                connection.server.name,
+            )
+            return ServerSwitchResult(
+                success=False,
+                reason="client_missing",
+                server=connection.server,
+            )
+
+        async with self.session() as session:
+            await User.update(session=session, tg_id=user.tg_id, server_id=server_id)
+
+        user.server_id = server_id
+        user.server = connection.server
+        logger.info("User %s switched to server %s.", user.tg_id, connection.server.name)
+        return ServerSwitchResult(
+            success=True,
+            reason="switched",
+            server=connection.server,
+        )
 
     async def get_key(self, user: User) -> str | None:
         async with self.session() as session:

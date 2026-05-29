@@ -12,7 +12,13 @@ from app.bot.utils.constants import PREVIOUS_CALLBACK_KEY
 from app.bot.utils.navigation import NavProfile
 from app.db.models import User
 
-from .keyboard import buy_subscription_keyboard, profile_keyboard
+from .keyboard import (
+    ProfileServerData,
+    buy_subscription_keyboard,
+    format_server_label,
+    profile_keyboard,
+    server_selection_keyboard,
+)
 
 logger = logging.getLogger(__name__)
 router = Router(name=__name__)
@@ -87,6 +93,86 @@ async def callback_show_key(
     logger.info(f"User {user.tg_id} looked key.")
     key = await services.vpn.get_key(user)
     await show_temporary_key(callback=callback, key=key)
+
+
+@router.callback_query(F.data == NavProfile.SELECT_SERVER)
+async def callback_select_server(
+    callback: CallbackQuery,
+    user: User,
+    services: ServicesContainer,
+) -> None:
+    logger.info("User %s opened server selection.", user.tg_id)
+
+    if not user.server_id:
+        await callback.answer(_("profile:popup:no_subscription_for_server_select"), show_alert=True)
+        return
+
+    servers = await services.server_pool.get_selectable_servers()
+    if not servers:
+        await callback.answer(_("profile:popup:no_servers_available"), show_alert=True)
+        return
+
+    current_server = next((server for server in servers if server.id == user.server_id), user.server)
+    await callback.message.edit_text(
+        text=_("profile:message:server_selection").format(
+            server=format_server_label(current_server),
+        ),
+        reply_markup=server_selection_keyboard(
+            servers=servers,
+            current_server_id=user.server_id,
+        ),
+    )
+
+
+@router.callback_query(ProfileServerData.filter())
+async def callback_server_selected(
+    callback: CallbackQuery,
+    user: User,
+    callback_data: ProfileServerData,
+    services: ServicesContainer,
+) -> None:
+    logger.info(
+        "User %s selected server %s.",
+        user.tg_id,
+        callback_data.server_id,
+    )
+
+    result = await services.vpn.switch_server(
+        user=user,
+        server_id=callback_data.server_id,
+    )
+
+    if not result.success:
+        message_by_reason = {
+            "already_selected": _("profile:popup:server_already_selected"),
+            "client_missing": _("profile:popup:server_client_missing"),
+            "unavailable": _("profile:popup:server_unavailable"),
+        }
+        await callback.answer(
+            message_by_reason.get(
+                result.reason,
+                _("profile:popup:server_unavailable"),
+            ),
+            show_alert=True,
+        )
+        return
+
+    await callback.answer(
+        _("profile:popup:server_switched").format(
+            server=format_server_label(result.server),
+        ),
+        show_alert=True,
+    )
+
+    status = await services.subscription.get_subscription_status(user)
+    await callback.message.edit_text(
+        text=await prepare_message(user=user, client_data=status.client_data),
+        reply_markup=profile_keyboard(
+            show_additional_profile_key=bool(
+                status.status_check_ok and status.has_additional_profile
+            )
+        ),
+    )
 
 
 @router.callback_query(F.data == NavProfile.SHOW_ADDITIONAL_KEY)

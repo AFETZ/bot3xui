@@ -967,16 +967,22 @@ msgstr ""
 "\n"
 "<b>🌐 Подключение обхода белых списков:</b>\n"
 "<i>(доступно на тарифах с обходом белых списков)</i>\n"
-"1. Нажмите «🌐 Подключить обход белых списков» ниже — второй ключ "
+"1. Нажмите «🌐 Подключить обход белых списков» ниже — Universal-профиль "
 "автоматически добавится в Happ\n"
 "2. Или скопируйте ключ из «👤 Профиль» → «🌐 Показать ключ обхода белых "
 "списков» и вставьте вручную\n"
 "3. В Happ у вас появятся два профиля — основной и для обхода белых списков\n"
-"4. Переключитесь на профиль обхода белых списков\n"
-"5. Нажмите значок 🔄 обновления списка серверов\n"
-"6. Нажмите значок пинга рядом — проверьте задержку всех серверов\n"
-"7. Выберите сервер с наименьшей задержкой (около 200 мс) и включите VPN\n"
-"8. Если выбранный сервер не работает — попробуйте следующий по задержке\n"
+"4. Основной профиль используйте как обычно. БС-профиль включайте только "
+"когда нужен обход белых списков\n"
+"5. БС-профиль настроен на автообновление раз в час; также можно обновить "
+"список вручную значком 🔄\n"
+"6. Если при обновлении БС без VPN появляется таймаут, включите основной "
+"профиль и повторите обновление БС\n"
+"7. При открытии Happ серверы БС-профиля автоматически проверяются пингом\n"
+"8. Когда нужен обход БС, откройте БС-профиль и выберите доступный сервер с "
+"минимальной задержкой\n"
+"9. Если выбранный сервер перестал работать — выберите следующий доступный "
+"сервер по пингу\n"
 "\n"
 "<b>⚠️ Важно:</b> обход белых списков предоставляется as is, без гарантий "
 "стабильной работы."
@@ -1137,6 +1143,17 @@ msgstr ""
 "🔑 <b>Ваш ключ:</b> <i>(Закроется через {seconds_text})</i>\n"
 "<pre>{key}</pre>"
 
+#: app/bot/routers/profile/handler.py:111
+msgid "profile:message:server_selection"
+msgstr ""
+"🌍 <b>Выберите сервер подключения</b>\n"
+"\n"
+"Текущий сервер: {server}"
+
+#: app/bot/routers/profile/keyboard.py:16
+msgid "profile:message:server_unknown"
+msgstr "Неизвестный сервер"
+
 #: app/bot/routers/profile/handler.py:85
 msgid "10 seconds"
 msgstr "10 секунд"
@@ -1165,9 +1182,49 @@ msgstr "🌐 Показать ключ обхода белых списков"
 msgid "profile:button:connect"
 msgstr "🔌 Подключиться"
 
+#: app/bot/routers/profile/keyboard.py:46
+msgid "profile:button:select_server"
+msgstr "🌍 Выбрать сервер"
+
+#: app/bot/routers/profile/keyboard.py:76
+msgid "profile:button:back_to_profile"
+msgstr "◀️ Назад в профиль"
+
+#: app/bot/routers/profile/keyboard.py:21
+msgid "profile:server:finland"
+msgstr "Финляндия"
+
+#: app/bot/routers/profile/keyboard.py:23
+msgid "profile:server:kazakhstan"
+msgstr "Казахстан"
+
 #: app/bot/routers/profile/handler.py:91
 msgid "profile:popup:additional_key_unavailable"
 msgstr "Обход белых списков недоступен на вашем тарифе."
+
+#: app/bot/routers/profile/handler.py:102
+msgid "profile:popup:no_subscription_for_server_select"
+msgstr "Выбор сервера доступен только при наличии подписки."
+
+#: app/bot/routers/profile/handler.py:107
+msgid "profile:popup:no_servers_available"
+msgstr "Сейчас нет доступных серверов."
+
+#: app/bot/routers/profile/handler.py:143
+msgid "profile:popup:server_already_selected"
+msgstr "Этот сервер уже выбран."
+
+#: app/bot/routers/profile/handler.py:144
+msgid "profile:popup:server_client_missing"
+msgstr "На этом сервере пока нет вашей подписки."
+
+#: app/bot/routers/profile/handler.py:145
+msgid "profile:popup:server_unavailable"
+msgstr "Этот сервер сейчас недоступен."
+
+#: app/bot/routers/profile/handler.py:158
+msgid "profile:popup:server_switched"
+msgstr "Сервер переключён: {server}. Обновите профиль в приложении VPN."
 
 #: app/bot/routers/referral/handler.py:35
 msgid "referral:message:user_summary"
@@ -1495,6 +1552,13 @@ msgstr ""
 "\n"
 "Количество устройств: {devices}\n"
 "Заканчивается через: {expiry_time}"
+
+#: app/bot/tasks/subscription_expiry.py:29
+msgid "task:message:subscription_expiry_urgent"
+msgstr ""
+"⚠️ <b>Подписка закончится через {expiry_time}</b>\n"
+"\n"
+"После окончания подписки VPN-доступ станет недоступен. Если потребуется ручная проверка оплаты, продление может занять время, поэтому рекомендуем продлить сейчас."
 
 #: app/bot/utils/formatting.py:18 app/bot/utils/formatting.py:20
 #: app/bot/utils/formatting.py:28

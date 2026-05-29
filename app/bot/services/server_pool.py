@@ -53,6 +53,25 @@ class ServerPoolService:
             except Exception as exception:
                 logger.error(f"Failed to remove server {server.name}: {exception}")
 
+    async def get_connection_by_server_id(self, server_id: int) -> Connection | None:
+        connection = self._servers.get(server_id)
+        if connection:
+            async with self.session() as session:
+                server = await Server.get_by_id(session=session, id=server_id)
+            if server:
+                connection.server = server
+            return connection
+
+        async with self.session() as session:
+            server = await Server.get_by_id(session=session, id=server_id)
+
+        if not server:
+            logger.error("Server %s not found in database.", server_id)
+            return None
+
+        await self._add_server(server)
+        return self._servers.get(server_id)
+
     async def refresh_server(self, server: Server) -> None:
         if server.id in self._servers:
             self._remove_server(server)
@@ -168,3 +187,10 @@ class ServerPoolService:
 
         logger.critical("No available servers found in pool")
         return None
+
+    async def get_selectable_servers(self) -> list[Server]:
+        await self.sync_servers()
+        return sorted(
+            [conn.server for conn in self._servers.values() if conn.server.online],
+            key=lambda server: (server.location or "", server.name),
+        )

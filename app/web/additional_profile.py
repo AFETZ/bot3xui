@@ -1,5 +1,6 @@
 import asyncio
 import logging
+from dataclasses import dataclass
 
 import aiohttp
 from aiohttp import ClientError, ClientTimeout, web
@@ -8,14 +9,113 @@ from app.bot.services.subscription import SubscriptionService
 
 logger = logging.getLogger(__name__)
 
-UPSTREAM_ADDITIONAL_PROFILE_URL = (
-    "https://raw.githubusercontent.com/zieng2/wl/main/vless_lite.txt"
+ADDITIONAL_PROFILE_MIRROR_TIMEOUT_SECONDS = 5
+ADDITIONAL_PROFILE_TITLE = "AFZVPN Universal WL"
+ADDITIONAL_PROFILE_MIRROR_URLS = (
+    "https://raw.githubusercontent.com/zieng2/wl/main/vless_universal.txt",
+    "https://codeberg.org/zieng2/wl/raw/branch/main/vless_universal.txt",
+    "https://gitlab.com/zieng2/wl/raw/main/vless_universal.txt",
+    "https://hub.mos.ru/zieng2/wl/raw/main/list_universal.txt",
+    "https://gitverse.ru/api/repos/zieng2/wl/raw/branch/master/list_universal.txt",
 )
+SUPPORTED_PROFILE_PREFIXES = (
+    "vless://",
+    "vmess://",
+    "trojan://",
+    "ss://",
+    "socks://",
+    "hy2://",
+    "hysteria2://",
+    "#",
+)
+
+
+@dataclass(frozen=True)
+class AdditionalProfileSnapshot:
+    text: str
+    source_url: str
+    is_stale: bool = False
+
+
+def _looks_like_supported_profile_body(text: str) -> bool:
+    lines = [line.strip() for line in text.splitlines() if line.strip()]
+    if not lines:
+        return False
+    return all(line.startswith(SUPPORTED_PROFILE_PREFIXES) for line in lines)
+
+
+def _build_response_headers(snapshot: AdditionalProfileSnapshot) -> dict[str, str]:
+    return {
+        "Cache-Control": "no-store, no-cache, must-revalidate",
+        "Pragma": "no-cache",
+        "Expires": "0",
+        "profile-title": ADDITIONAL_PROFILE_TITLE,
+        "profile-update-interval": "1",
+        "subscription-auto-update-enable": "1",
+        "subscription-ping-onopen-enabled": "1",
+        "ping-type": "proxy-head",
+        "check-url-via-proxy": "https://cp.cloudflare.com/generate_204",
+        "X-Profile-Source": snapshot.source_url,
+        "X-Profile-Stale": "1" if snapshot.is_stale else "0",
+    }
 
 
 class AdditionalProfileProxy:
     def __init__(self, subscription_service: SubscriptionService) -> None:
         self.subscription_service = subscription_service
+        self._cached_profile: AdditionalProfileSnapshot | None = None
+
+    async def _fetch_profile(self) -> AdditionalProfileSnapshot:
+        request_timeout = ClientTimeout(total=ADDITIONAL_PROFILE_MIRROR_TIMEOUT_SECONDS)
+
+        async with aiohttp.ClientSession() as session:
+            for mirror_url in ADDITIONAL_PROFILE_MIRROR_URLS:
+                try:
+                    async with session.get(mirror_url, timeout=request_timeout) as response:
+                        if response.status != 200:
+                            logger.warning(
+                                "Additional profile mirror returned bad status: url=%s status=%s",
+                                mirror_url,
+                                response.status,
+                            )
+                            continue
+
+                        text = await response.text(encoding="utf-8")
+                except (asyncio.TimeoutError, ClientError, UnicodeDecodeError) as exception:
+                    logger.warning(
+                        "Additional profile mirror fetch failed: url=%s error=%s",
+                        mirror_url,
+                        exception,
+                    )
+                    continue
+
+                if not _looks_like_supported_profile_body(text):
+                    logger.warning(
+                        "Additional profile mirror returned invalid profile body: url=%s body_len=%d",
+                        mirror_url,
+                        len(text),
+                    )
+                    continue
+
+                snapshot = AdditionalProfileSnapshot(
+                    text=text,
+                    source_url=mirror_url,
+                )
+                self._cached_profile = snapshot
+                return snapshot
+
+        if self._cached_profile:
+            logger.warning(
+                "All additional profile mirrors failed. Returning stale cached profile from %s.",
+                self._cached_profile.source_url,
+            )
+            return AdditionalProfileSnapshot(
+                text=self._cached_profile.text,
+                source_url=self._cached_profile.source_url,
+                is_stale=True,
+            )
+
+        raise web.HTTPBadGateway(text="Upstream source is unavailable.")
 
     async def handle(self, request: web.Request) -> web.Response:
         vpn_id = request.match_info["vpn_id"]
@@ -43,43 +143,20 @@ class AdditionalProfileProxy:
             )
             raise web.HTTPForbidden(text="Forbidden")
 
-        try:
-            timeout = ClientTimeout(total=15)
-            async with aiohttp.ClientSession(timeout=timeout) as session:
-                async with session.get(UPSTREAM_ADDITIONAL_PROFILE_URL) as response:
-                    if response.status != 200:
-                        logger.error(
-                            "Additional profile upstream returned bad status %s for user %s.",
-                            response.status,
-                            user.tg_id,
-                        )
-                        raise web.HTTPBadGateway(text="Upstream source is unavailable.")
-
-                    text = await response.text(encoding="utf-8")
-        except web.HTTPException:
-            raise
-        except (asyncio.TimeoutError, ClientError) as exception:
-            logger.exception(
-                "Additional profile upstream fetch failed for user %s: %s",
-                user.tg_id,
-                exception,
-            )
-            raise web.HTTPBadGateway(text="Upstream source is unavailable.") from exception
+        snapshot = await self._fetch_profile()
 
         logger.info(
-            "Additional profile access granted for user %s (vpn_id=%s).",
+            "Additional profile access granted for user %s (vpn_id=%s source=%s stale=%s).",
             user.tg_id,
             vpn_id,
+            snapshot.source_url,
+            snapshot.is_stale,
         )
         return web.Response(
-            text=text,
+            text=snapshot.text,
             content_type="text/plain",
             charset="utf-8",
-            headers={
-                "Cache-Control": "no-store, no-cache, must-revalidate",
-                "Pragma": "no-cache",
-                "Expires": "0",
-            },
+            headers=_build_response_headers(snapshot),
         )
 
 

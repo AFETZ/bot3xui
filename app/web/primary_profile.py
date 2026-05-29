@@ -9,6 +9,14 @@ from app.bot.services.subscription import SubscriptionService
 
 logger = logging.getLogger(__name__)
 
+PROFILE_TITLE_PREFIX = "AFZVPN"
+PROFILE_SERVER_LABELS = {
+    "FI": "Finland",
+    "FINLAND": "Finland",
+    "KZ": "Kazakhstan",
+    "KAZAKHSTAN": "Kazakhstan",
+}
+
 FORWARDED_HEADERS = (
     "content-type",
     "profile-title",
@@ -75,6 +83,58 @@ def _normalize_forwarded_headers(upstream_headers: dict[str, str]) -> dict[str, 
     return response_headers
 
 
+def _safe_profile_title_value(value: str) -> str | None:
+    title = value.encode("ascii", errors="ignore").decode("ascii").strip()
+    return title or None
+
+
+def _build_profile_title(user) -> str | None:
+    server = getattr(user, "server", None)
+    if not server:
+        return None
+
+    location = (getattr(server, "location", "") or "").upper()
+    label = (
+        PROFILE_SERVER_LABELS.get(location)
+        or getattr(server, "name", None)
+        or getattr(server, "location", None)
+    )
+    if not label:
+        return None
+
+    return _safe_profile_title_value(f"{PROFILE_TITLE_PREFIX} {label}")
+
+
+def _build_cabinet_url(subscription_service: SubscriptionService, user) -> str | None:
+    get_cabinet_url = getattr(subscription_service, "get_cabinet_url", None)
+    if not get_cabinet_url:
+        return None
+    return get_cabinet_url(user)
+
+
+def _build_inactive_profile_response(
+    subscription_service: SubscriptionService,
+    user,
+) -> web.Response:
+    cabinet_url = _build_cabinet_url(subscription_service, user)
+    headers = {
+        "content-type": "text/plain; charset=utf-8",
+        "cache-control": "no-store, no-cache, must-revalidate",
+        "pragma": "no-cache",
+        "expires": "0",
+        "profile-title": f"{PROFILE_TITLE_PREFIX} Expired",
+    }
+    if cabinet_url:
+        headers["profile-web-page-url"] = cabinet_url
+        headers["support-url"] = cabinet_url
+        headers["announce"] = f"Subscription expired. Renew: {cabinet_url}"
+
+    text = "# Subscription expired\n"
+    if cabinet_url:
+        text += f"# Renew: {cabinet_url}\n"
+    return web.Response(text=text, headers=headers)
+
+
 class PrimaryProfileProxy:
     def __init__(self, subscription_service: SubscriptionService) -> None:
         self.subscription_service = subscription_service
@@ -113,12 +173,11 @@ class PrimaryProfileProxy:
 
         if not status.is_active:
             logger.info(
-                "Primary profile access denied for user %s (vpn_id=%s). active=%s",
+                "Primary profile inactive for user %s (vpn_id=%s). Returning renewal profile.",
                 user.tg_id,
                 vpn_id,
-                status.is_active,
             )
-            raise web.HTTPForbidden(text="Forbidden")
+            return _build_inactive_profile_response(self.subscription_service, user)
 
         upstream_url = await self.subscription_service.get_upstream_profile_url(user)
         if not upstream_url:
@@ -167,6 +226,13 @@ class PrimaryProfileProxy:
 
         normalized_body = _maybe_decode_base64_profile(body_bytes)
         response_headers = _normalize_forwarded_headers(upstream_headers)
+        profile_title = _build_profile_title(user)
+        if profile_title:
+            response_headers["profile-title"] = profile_title
+        cabinet_url = _build_cabinet_url(self.subscription_service, user)
+        if cabinet_url:
+            response_headers["profile-web-page-url"] = cabinet_url
+            response_headers["support-url"] = cabinet_url
 
         response_headers.setdefault("content-type", "text/plain; charset=utf-8")
         response_headers["cache-control"] = "no-store, no-cache, must-revalidate"

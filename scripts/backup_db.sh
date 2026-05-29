@@ -18,6 +18,21 @@ backup_file="$BACKUP_DIR/bot_database_${timestamp}.sqlite3"
 
 if command -v sqlite3 >/dev/null 2>&1; then
   sqlite3 "$DB_PATH" ".timeout 5000" ".backup '$backup_file'"
+elif command -v python3 >/dev/null 2>&1; then
+  python3 - "$DB_PATH" "$backup_file" <<'PY'
+import sqlite3
+import sys
+
+source_path, backup_path = sys.argv[1:3]
+
+source = sqlite3.connect(f"file:{source_path}?mode=ro", uri=True, timeout=5)
+target = sqlite3.connect(backup_path)
+try:
+    source.backup(target)
+finally:
+    target.close()
+    source.close()
+PY
 else
   cp "$DB_PATH" "$backup_file"
 fi

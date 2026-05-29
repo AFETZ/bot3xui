@@ -45,7 +45,11 @@ class TelegramStars(PaymentGateway):
         self.i18n = i18n
         logger.info("TelegramStars payment gateway initialized.")
 
-    async def create_payment(self, data: SubscriptionData) -> str:
+    async def create_payment(
+        self,
+        data: SubscriptionData,
+        return_url: str | None = None,
+    ) -> str:
         if await IsDev()(user_id=data.user_id):
             amount = 1
         else:

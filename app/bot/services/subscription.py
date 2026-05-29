@@ -182,6 +182,9 @@ class SubscriptionService:
     def get_additional_profile_url(self, user: User) -> str:
         return f"{self.config.bot.DOMAIN}/wl/{user.vpn_id}"
 
+    def get_cabinet_url(self, user: User) -> str:
+        return f"{self.config.bot.DOMAIN.rstrip('/')}/cabinet/{user.vpn_id}"
+
     async def get_upstream_profile_url(self, user: User) -> str | None:
         return await self.vpn_service.get_upstream_key(user)
 

@@ -51,9 +51,16 @@ class Cryptomus(PaymentGateway):
         self.app.router.add_post(CRYPTOMUS_WEBHOOK, self.webhook_handler)
         logger.info("Cryptomus payment gateway initialized.")
 
-    async def create_payment(self, data: SubscriptionData) -> str:
-        bot_username = (await self.bot.get_me()).username
-        redirect_url = f"https://t.me/{bot_username}"
+    async def create_payment(
+        self,
+        data: SubscriptionData,
+        return_url: str | None = None,
+    ) -> str:
+        if return_url:
+            redirect_url = return_url
+        else:
+            bot_username = (await self.bot.get_me()).username
+            redirect_url = f"https://t.me/{bot_username}"
         order_id = str(uuid.uuid4())
         price = str(data.price)
 

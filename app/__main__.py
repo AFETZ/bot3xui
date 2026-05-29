@@ -29,7 +29,11 @@ from app.bot.utils.constants import (
 )
 from app.config import DEFAULT_BOT_HOST, DEFAULT_LOCALES_DIR, Config, load_config
 from app.db.database import Database
-from app.web import setup_additional_profile_route, setup_primary_profile_route
+from app.web import (
+    setup_additional_profile_route,
+    setup_cabinet_routes,
+    setup_primary_profile_route,
+)
 
 
 async def on_shutdown(db: Database, bot: Bot, services: ServicesContainer) -> None:
@@ -198,6 +202,12 @@ async def main() -> None:
     setup_primary_profile_route(
         app=app,
         subscription_service=services_container.subscription,
+    )
+    setup_cabinet_routes(
+        app=app,
+        config=config,
+        services=services_container,
+        gateway_factory=gateway_factory,
     )
 
     # Set up bot commands
