@@ -58,12 +58,6 @@ def profile_keyboard(*, show_additional_profile_key: bool = False) -> InlineKeyb
         )
     builder.row(
         InlineKeyboardButton(
-            text=_("profile:button:select_server"),
-            callback_data=NavProfile.SELECT_SERVER,
-        )
-    )
-    builder.row(
-        InlineKeyboardButton(
             text=_("profile:button:connect"),
             callback_data=NavDownload.MAIN,
         )

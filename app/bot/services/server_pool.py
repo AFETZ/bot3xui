@@ -9,11 +9,41 @@ from app.db.models import Server, User
 
 logger = logging.getLogger(__name__)
 
+PROFILE_SERVER_LOCATION_ORDER = {
+    "KZ": 0,
+    "KAZAKHSTAN": 0,
+    "FI": 1,
+    "FINLAND": 1,
+}
+
 
 @dataclass
 class Connection:
     server: Server
     api: AsyncApi
+
+
+def _profile_server_order(server: Server) -> int:
+    location = (server.location or "").upper()
+    name = (server.name or "").upper()
+
+    if location in {"KZ", "KAZAKHSTAN"} or "KAZAKHSTAN" in name:
+        return PROFILE_SERVER_LOCATION_ORDER["KZ"]
+    if location in {"FI", "FINLAND"} or "FINLAND" in name:
+        return PROFILE_SERVER_LOCATION_ORDER["FI"]
+    return len(PROFILE_SERVER_LOCATION_ORDER)
+
+
+def _is_profile_server(server: Server) -> bool:
+    return _profile_server_order(server) < len(PROFILE_SERVER_LOCATION_ORDER)
+
+
+def _profile_server_sort_key(server: Server) -> tuple[int, str, str]:
+    return (
+        _profile_server_order(server),
+        (server.location or "").upper(),
+        server.name,
+    )
 
 
 class ServerPoolService:
@@ -192,5 +222,38 @@ class ServerPoolService:
         await self.sync_servers()
         return sorted(
             [conn.server for conn in self._servers.values() if conn.server.online],
-            key=lambda server: (server.location or "", server.name),
+            key=_profile_server_sort_key,
+        )
+
+    async def get_profile_connections(self) -> list[Connection]:
+        async with self.session() as session:
+            db_servers = await Server.get_all(session)
+
+        db_server_map = {server.id: server for server in db_servers}
+        connections: list[Connection] = []
+
+        for server_id, connection in list(self._servers.items()):
+            db_server = db_server_map.get(server_id)
+            if not db_server:
+                continue
+            connection.server = db_server
+            if connection.server.online:
+                connections.append(connection)
+
+        for server in db_servers:
+            if server.id in self._servers or not server.online:
+                continue
+            connection = await self.get_connection_by_server_id(server.id)
+            if connection and connection.server.online:
+                connections.append(connection)
+
+        if not connections:
+            return []
+
+        profile_connections = [
+            connection for connection in connections if _is_profile_server(connection.server)
+        ]
+        return sorted(
+            profile_connections or connections,
+            key=lambda connection: _profile_server_sort_key(connection.server),
         )

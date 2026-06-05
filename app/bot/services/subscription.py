@@ -188,6 +188,9 @@ class SubscriptionService:
     async def get_upstream_profile_url(self, user: User) -> str | None:
         return await self.vpn_service.get_upstream_key(user)
 
+    async def get_upstream_profile_sources(self, user: User):
+        return await self.vpn_service.get_upstream_profile_sources(user)
+
     def can_upgrade_plan(self, status: SubscriptionStatus) -> bool:
         if not status.is_active or not status.plan or status.plan.includes_additional_profile:
             return False

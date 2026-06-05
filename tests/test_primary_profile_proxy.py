@@ -1,3 +1,4 @@
+import base64
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
@@ -39,6 +40,20 @@ class FakeClientSession:
         if self.error:
             raise self.error
         return self.response
+
+
+class MappingFakeClientSession:
+    def __init__(self, responses_by_url, **kwargs):
+        self.responses_by_url = responses_by_url
+
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, exc_type, exc, tb):
+        return False
+
+    def get(self, url, **kwargs):
+        return self.responses_by_url[url]
 
 
 def make_request(vpn_id="vpn-1", headers=None):
@@ -243,6 +258,60 @@ async def test_proxy_uses_selected_server_name_when_location_is_unknown(monkeypa
     response = await proxy.handle(make_request("vpn-allowed"))
 
     assert response.headers["profile-title"] == "AFZVPN Finland"
+
+
+@pytest.mark.asyncio
+async def test_proxy_aggregates_profile_sources_for_happ_switching(monkeypatch):
+    user = SimpleNamespace(tg_id=1, vpn_id="vpn-allowed")
+    status = SimpleNamespace(status_check_ok=True, is_active=True)
+    sources = [
+        SimpleNamespace(
+            server=SimpleNamespace(name="Kazakhstan", location="KZ"),
+            url="https://kz.example/sub/vpn-allowed",
+        ),
+        SimpleNamespace(
+            server=SimpleNamespace(name="Finland", location="FI"),
+            url="https://fi.example/sub/vpn-allowed",
+        ),
+    ]
+    service = SimpleNamespace(
+        get_subscription_status_by_vpn_id=AsyncMock(return_value=(user, status)),
+        get_upstream_profile_sources=AsyncMock(return_value=sources),
+        get_cabinet_url=lambda user: f"https://bot.example/cabinet/{user.vpn_id}",
+    )
+    proxy = PrimaryProfileProxy(subscription_service=service)
+
+    fi_profile = b"vless://user@fi.example:443?security=reality#old-fi\n"
+    encoded_fi_profile = base64.b64encode(fi_profile)
+    responses = {
+        "https://kz.example/sub/vpn-allowed": FakeUpstreamResponse(
+            body=b"vless://user@kz.example:443?security=reality#old-kz\n",
+            headers={"Profile-Title": "Old title"},
+        ),
+        "https://fi.example/sub/vpn-allowed": FakeUpstreamResponse(
+            body=encoded_fi_profile,
+            headers={"Profile-Title": "Old title"},
+        ),
+    }
+
+    monkeypatch.setattr(
+        "app.web.primary_profile.aiohttp.ClientSession",
+        lambda **kwargs: MappingFakeClientSession(responses),
+    )
+
+    response = await proxy.handle(make_request("vpn-allowed"))
+
+    assert response.status == 200
+    assert response.headers["profile-title"] == "AFZVPN"
+    assert response.headers["subscription-auto-update-enable"] == "1"
+    assert response.headers["subscription-ping-onopen-enabled"] == "1"
+    assert (
+        response.body
+        == (
+            b"vless://user@kz.example:443?security=reality#AFZVPN%20Kazakhstan\n"
+            b"vless://user@fi.example:443?security=reality#AFZVPN%20Finland\n"
+        )
+    )
 
 
 @pytest.mark.asyncio
