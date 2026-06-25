@@ -54,6 +54,10 @@ DEFAULT_SUBSCRIPTION_PATH = "/user/"
 DEFAULT_LOG_LEVEL = "DEBUG"
 DEFAULT_LOG_FORMAT = "%(asctime)s | %(name)s | %(levelname)s | %(message)s"
 DEFAULT_LOG_ARCHIVE_FORMAT = LOG_ZIP_ARCHIVE_FORMAT
+DEFAULT_LOG_MAX_BYTES = 10 * 1024 * 1024
+DEFAULT_LOG_BACKUP_COUNT = 5
+DEFAULT_BOT_PROXY_STRICT = False
+DEFAULT_BOT_PROXY_CHECK_TIMEOUT = 2.0
 
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
@@ -72,6 +76,8 @@ class BotConfig:
     PORT: int
     START_IMAGE: str | None
     PROXY_URL: str | None
+    PROXY_STRICT: bool
+    PROXY_CHECK_TIMEOUT: float
     API_SERVER: str | None
     USE_WEBHOOK: bool
 
@@ -165,6 +171,8 @@ class LoggingConfig:
     LEVEL: str
     FORMAT: str
     ARCHIVE_FORMAT: str
+    MAX_BYTES: int
+    BACKUP_COUNT: int
 
 
 @dataclass
@@ -179,6 +187,13 @@ class Config:
     database: DatabaseConfig
     redis: RedisConfig
     logging: LoggingConfig
+
+
+def normalize_bot_domain(domain: str) -> str:
+    domain = domain.strip().rstrip("/")
+    if domain.startswith(("http://", "https://")):
+        return domain
+    return f"https://{domain}"
 
 
 def load_config() -> Config:
@@ -292,10 +307,16 @@ def load_config() -> Config:
             ADMINS=bot_admins,
             DEV_ID=env.int("BOT_DEV_ID"),
             SUPPORT_ID=env.int("BOT_SUPPORT_ID"),
-            DOMAIN=f"https://{env.str('BOT_DOMAIN')}",
+            DOMAIN=normalize_bot_domain(env.str("BOT_DOMAIN")),
             PORT=env.int("BOT_PORT", default=DEFAULT_BOT_PORT),
             START_IMAGE=env.str("BOT_START_IMAGE", default=None),
             PROXY_URL=env.str("BOT_PROXY_URL", default=None),
+            PROXY_STRICT=env.bool("BOT_PROXY_STRICT", default=DEFAULT_BOT_PROXY_STRICT),
+            PROXY_CHECK_TIMEOUT=env.float(
+                "BOT_PROXY_CHECK_TIMEOUT",
+                default=DEFAULT_BOT_PROXY_CHECK_TIMEOUT,
+                validate=Range(min=0.1, error="BOT_PROXY_CHECK_TIMEOUT must be >= 0.1"),
+            ),
             API_SERVER=env.str("BOT_API_SERVER", default=None),
             USE_WEBHOOK=env.bool("BOT_USE_WEBHOOK", default=True),
         ),
@@ -416,6 +437,16 @@ def load_config() -> Config:
                     [LOG_ZIP_ARCHIVE_FORMAT, LOG_GZ_ARCHIVE_FORMAT],
                     error="LOG_ARCHIVE_FORMAT must be one of: {choices}",
                 ),
+            ),
+            MAX_BYTES=env.int(
+                "LOG_MAX_BYTES",
+                default=DEFAULT_LOG_MAX_BYTES,
+                validate=Range(min=1024, error="LOG_MAX_BYTES must be >= 1024"),
+            ),
+            BACKUP_COUNT=env.int(
+                "LOG_BACKUP_COUNT",
+                default=DEFAULT_LOG_BACKUP_COUNT,
+                validate=Range(min=0, error="LOG_BACKUP_COUNT must be >= 0"),
             ),
         ),
     )

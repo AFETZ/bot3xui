@@ -278,6 +278,9 @@ class AdminUserService:
                 subscription_plan_code=(
                     status.plan.code if status.plan else (target.current_plan_code or None)
                 ),
+                pending_plan_code=target.pending_plan_code,
+                pending_period_duration_days=target.pending_period_duration_days,
+                pending_plan_starts_at=target.pending_plan_starts_at,
                 expiry_timestamp=status.expiry_timestamp,
                 traffic_used=status.client_data.traffic_used if status.client_data else None,
                 devices=status.client_data.max_devices if status.client_data else None,

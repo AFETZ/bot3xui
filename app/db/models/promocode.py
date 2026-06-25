@@ -34,6 +34,9 @@ class Promocode(Base):
     code: Mapped[str] = mapped_column(String(length=32), unique=True, nullable=False)
     duration: Mapped[int] = mapped_column(nullable=False)
     max_activations: Mapped[int] = mapped_column(default=1, server_default="1", nullable=False)
+    valid_until: Mapped[datetime | None] = mapped_column(nullable=True)
+    deny_trial: Mapped[bool] = mapped_column(default=False, server_default="0", nullable=False)
+    allowed_plan_code: Mapped[str | None] = mapped_column(String(length=32), nullable=True)
     is_activated: Mapped[bool] = mapped_column(default=False, nullable=False)
     activated_by: Mapped[int | None] = mapped_column(ForeignKey("users.tg_id"), nullable=True)
     created_at: Mapped[datetime] = mapped_column(default=func.now(), nullable=False)
@@ -52,7 +55,19 @@ class Promocode(Base):
     def activation_count(self) -> int:
         return len(self.activations) if self.activations else 0
 
-    def can_activate(self, user_id: int) -> bool:
+    def can_activate(
+        self,
+        user_id: int,
+        *,
+        is_trial: bool = False,
+        plan_code: str | None = None,
+    ) -> bool:
+        if self.valid_until and datetime.utcnow() > self.valid_until:
+            return False
+        if self.deny_trial and is_trial:
+            return False
+        if self.allowed_plan_code and self.allowed_plan_code != plan_code:
+            return False
         if self.is_multi_use:
             if any(a.user_tg_id == user_id for a in self.activations):
                 return False

@@ -3,7 +3,7 @@ from unittest.mock import AsyncMock
 
 import pytest
 
-from app.bot.services.vpn import VPNService
+from app.bot.services.vpn import InboundCache, VPNService
 from app.db.models import User
 
 
@@ -39,12 +39,12 @@ async def test_get_upstream_key_uses_http_server_scheme(monkeypatch):
         tg_id=1,
         server_id=1,
         vpn_id="vpn-1",
-        server=SimpleNamespace(host="http://46.8.43.253:5865/panel/"),
+        server=SimpleNamespace(host="http://kz.example.test:5865/panel/"),
     )
     monkeypatch.setattr(User, "get", AsyncMock(return_value=user))
 
     assert await _service(subscription_scheme="http").get_upstream_key(user) == (
-        "http://46.8.43.253:2096/sub/vpn-1"
+        "http://kz.example.test:2096/sub/vpn-1"
     )
 
 
@@ -54,12 +54,12 @@ async def test_get_upstream_key_keeps_https_server_scheme(monkeypatch):
         tg_id=1,
         server_id=1,
         vpn_id="vpn-1",
-        server=SimpleNamespace(host="https://www.superbebra.uk:5865/panel/"),
+        server=SimpleNamespace(host="https://fi.example.test:5865/panel/"),
     )
     monkeypatch.setattr(User, "get", AsyncMock(return_value=user))
 
     assert await _service(subscription_scheme="http").get_upstream_key(user) == (
-        "https://www.superbebra.uk:2096/sub/vpn-1"
+        "https://fi.example.test:2096/sub/vpn-1"
     )
 
 
@@ -103,3 +103,220 @@ async def test_switch_server_rejects_server_without_client(monkeypatch):
     assert result.success is False
     assert result.reason == "client_missing"
     User.update.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_get_upstream_profile_sources_built_from_db_servers(monkeypatch):
+    kz = SimpleNamespace(id=1, name="Kazakhstan", location="KZ", host="http://kz.example.test:5865/panel/")
+    fi = SimpleNamespace(id=3, name="Finland", location="FI", host="https://fi.example.test:5865/panel/")
+    user = SimpleNamespace(tg_id=1, server_id=3, vpn_id="vpn-1", server=fi)
+    monkeypatch.setattr(User, "get", AsyncMock(return_value=user))
+
+    server_pool = SimpleNamespace(get_profile_servers=AsyncMock(return_value=[kz, fi]))
+    sources = await _service(server_pool_service=server_pool).get_upstream_profile_sources(user)
+
+    assert [source.server.id for source in sources] == [1, 3]
+    assert sources[0].url == "http://kz.example.test:2096/sub/vpn-1"
+    assert sources[1].url == "https://fi.example.test:2096/sub/vpn-1"
+
+
+@pytest.mark.asyncio
+async def test_get_upstream_profile_sources_appends_assigned_server(monkeypatch):
+    kz = SimpleNamespace(id=1, name="Kazakhstan", location="KZ", host="http://kz.example.test:5865/panel/")
+    legacy = SimpleNamespace(id=2, name="Legacy", location=None, host="http://10.0.0.2:5865/panel/")
+    user = SimpleNamespace(tg_id=1, server_id=2, vpn_id="vpn-1", server=legacy)
+    monkeypatch.setattr(User, "get", AsyncMock(return_value=user))
+
+    server_pool = SimpleNamespace(get_profile_servers=AsyncMock(return_value=[kz]))
+    sources = await _service(server_pool_service=server_pool).get_upstream_profile_sources(user)
+
+    assert [source.server.id for source in sources] == [1, 2]
+
+
+@pytest.mark.asyncio
+async def test_get_client_data_falls_back_to_another_profile_server(monkeypatch):
+    finland = SimpleNamespace(id=2, name="Finland")
+    kazakhstan = SimpleNamespace(id=1, name="Kazakhstan")
+    finland_connection = SimpleNamespace(
+        server=finland,
+        api=SimpleNamespace(
+            client=SimpleNamespace(
+                get_by_email=AsyncMock(side_effect=TimeoutError("panel timeout"))
+            )
+        ),
+    )
+    client = SimpleNamespace(
+        email="123",
+        total=0,
+        expiry_time=2_000_000_000_000,
+        up=100,
+        down=200,
+        enable=True,
+    )
+    kazakhstan_connection = SimpleNamespace(
+        server=kazakhstan,
+        api=SimpleNamespace(
+            client=SimpleNamespace(get_by_email=AsyncMock(return_value=client))
+        ),
+    )
+    server_pool = SimpleNamespace(
+        get_connection=AsyncMock(return_value=finland_connection),
+        get_profile_connections=AsyncMock(
+            return_value=[kazakhstan_connection, finland_connection]
+        ),
+    )
+    service = _service(server_pool_service=server_pool)
+    monkeypatch.setattr(
+        service,
+        "_get_limit_ip_from_connection",
+        AsyncMock(return_value=3),
+    )
+    user = SimpleNamespace(tg_id=123, server_id=2)
+
+    result = await service.get_client_data(user, raise_on_error=True)
+
+    assert result is not None
+    assert result.max_devices_count == 3
+    finland_connection.api.client.get_by_email.assert_awaited_once_with("123")
+    kazakhstan_connection.api.client.get_by_email.assert_awaited_once_with("123")
+    service._get_limit_ip_from_connection.assert_awaited_once_with(
+        connection=kazakhstan_connection,
+        client=client,
+        inbound_cache=None,
+    )
+
+
+@pytest.mark.asyncio
+async def test_get_client_data_skips_fallback_when_assigned_server_returns_data(monkeypatch):
+    client = SimpleNamespace(
+        email="123",
+        total=0,
+        expiry_time=2_000_000_000_000,
+        up=100,
+        down=200,
+        enable=True,
+    )
+    finland_connection = SimpleNamespace(
+        server=SimpleNamespace(id=2, name="Finland"),
+        api=SimpleNamespace(
+            client=SimpleNamespace(get_by_email=AsyncMock(return_value=client))
+        ),
+    )
+    kazakhstan_connection = SimpleNamespace(
+        server=SimpleNamespace(id=1, name="Kazakhstan"),
+        api=SimpleNamespace(
+            client=SimpleNamespace(get_by_email=AsyncMock(side_effect=AssertionError))
+        ),
+    )
+    server_pool = SimpleNamespace(
+        get_connection=AsyncMock(return_value=finland_connection),
+        get_profile_connections=AsyncMock(
+            return_value=[kazakhstan_connection, finland_connection]
+        ),
+    )
+    service = _service(server_pool_service=server_pool)
+    monkeypatch.setattr(
+        service,
+        "_get_limit_ip_from_connection",
+        AsyncMock(return_value=3),
+    )
+
+    result = await service.get_client_data(
+        SimpleNamespace(tg_id=123, server_id=2),
+        raise_on_error=True,
+    )
+
+    assert result is not None
+    assert result.max_devices_count == 3
+    finland_connection.api.client.get_by_email.assert_awaited_once_with("123")
+    kazakhstan_connection.api.client.get_by_email.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_get_client_data_reuses_inbound_cache_for_same_server(monkeypatch):
+    server = SimpleNamespace(id=1, name="Kazakhstan")
+    first_client = SimpleNamespace(
+        email="123",
+        total=0,
+        expiry_time=2_000_000_000_000,
+        up=100,
+        down=200,
+        enable=True,
+    )
+    second_client = SimpleNamespace(
+        email="456",
+        total=0,
+        expiry_time=2_000_000_000_000,
+        up=300,
+        down=400,
+        enable=True,
+    )
+    connection = SimpleNamespace(
+        server=server,
+        api=SimpleNamespace(
+            client=SimpleNamespace(
+                get_by_email=AsyncMock(side_effect=[first_client, second_client])
+            ),
+            inbound=SimpleNamespace(
+                get_list=AsyncMock(
+                    return_value=[
+                        SimpleNamespace(
+                            settings=SimpleNamespace(
+                                clients=[
+                                    SimpleNamespace(email="123", limit_ip=3),
+                                    SimpleNamespace(email="456", limit_ip=5),
+                                ]
+                            )
+                        )
+                    ]
+                )
+            ),
+        ),
+    )
+    server_pool = SimpleNamespace(get_connection=AsyncMock(return_value=connection))
+    service = _service(server_pool_service=server_pool)
+    inbound_cache = InboundCache()
+
+    first_result = await service.get_client_data(
+        SimpleNamespace(tg_id=123, server_id=1),
+        inbound_cache=inbound_cache,
+    )
+    second_result = await service.get_client_data(
+        SimpleNamespace(tg_id=456, server_id=1),
+        inbound_cache=inbound_cache,
+    )
+
+    assert first_result.max_devices_count == 3
+    assert second_result.max_devices_count == 5
+    assert connection.api.inbound.get_list.await_count == 1
+
+
+@pytest.mark.asyncio
+async def test_get_client_data_raises_when_all_profile_servers_fail(monkeypatch):
+    finland_connection = SimpleNamespace(
+        server=SimpleNamespace(id=2, name="Finland"),
+        api=SimpleNamespace(
+            client=SimpleNamespace(
+                get_by_email=AsyncMock(side_effect=TimeoutError("finland timeout"))
+            )
+        ),
+    )
+    kazakhstan_connection = SimpleNamespace(
+        server=SimpleNamespace(id=1, name="Kazakhstan"),
+        api=SimpleNamespace(
+            client=SimpleNamespace(
+                get_by_email=AsyncMock(side_effect=TimeoutError("kazakhstan timeout"))
+            )
+        ),
+    )
+    server_pool = SimpleNamespace(
+        get_connection=AsyncMock(return_value=finland_connection),
+        get_profile_connections=AsyncMock(
+            return_value=[kazakhstan_connection, finland_connection]
+        ),
+    )
+    service = _service(server_pool_service=server_pool)
+    user = SimpleNamespace(tg_id=123, server_id=2)
+
+    with pytest.raises(RuntimeError, match="all available servers"):
+        await service.get_client_data(user, raise_on_error=True)

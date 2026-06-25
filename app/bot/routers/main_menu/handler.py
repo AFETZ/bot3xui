@@ -6,21 +6,45 @@ from aiogram.filters import Command, CommandObject
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.storage.base import StorageKey
 from aiogram.fsm.storage.redis import RedisStorage
-from aiogram.types import CallbackQuery, FSInputFile, Message
+from aiogram.types import CallbackQuery, FSInputFile, Message, ReplyKeyboardRemove
 from aiogram.utils.i18n import gettext as _
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.bot.filters import IsAdmin
 from app.bot.models import ServicesContainer
-from app.bot.utils.constants import MAIN_MEDIA_MESSAGE_ID_KEY, MAIN_MESSAGE_ID_KEY, REPLY_KB_MESSAGE_ID_KEY
+from app.bot.utils.constants import (
+    MAIN_MEDIA_MESSAGE_ID_KEY,
+    MAIN_MESSAGE_ID_KEY,
+)
 from app.bot.utils.navigation import NavMain
 from app.config import Config
 from app.db.models import Invite, Referral, User
 
-from .keyboard import MENU_BUTTON_TEXT, main_menu_keyboard, menu_reply_keyboard
+from .keyboard import main_menu_keyboard
 
 logger = logging.getLogger(__name__)
 router = Router(name=__name__)
+LEGACY_REPLY_KB_MESSAGE_ID_KEY = "reply_kb_message_id"
+
+
+async def remove_stale_reply_keyboard(
+    bot: Bot,
+    chat_id: int,
+) -> None:
+    try:
+        cleanup_message = await bot.send_message(
+            chat_id=chat_id,
+            text=".",
+            reply_markup=ReplyKeyboardRemove(),
+        )
+    except Exception as exception:
+        logger.debug("Failed to remove stale reply keyboard for user %s: %s", chat_id, exception)
+        return
+
+    try:
+        await bot.delete_message(chat_id=chat_id, message_id=cleanup_message.message_id)
+    except Exception as exception:
+        logger.debug("Failed to delete reply keyboard cleanup message for user %s: %s", chat_id, exception)
 
 
 async def process_invite_attribution(session: AsyncSession, user: User, invite_hash: str) -> bool:
@@ -82,7 +106,7 @@ async def command_main_menu(
     logger.info(f"User {user.tg_id} opened main menu page.")
     previous_message_id = await state.get_value(MAIN_MESSAGE_ID_KEY)
     previous_media_message_id = await state.get_value(MAIN_MEDIA_MESSAGE_ID_KEY)
-    previous_reply_kb_id = await state.get_value(REPLY_KB_MESSAGE_ID_KEY)
+    previous_reply_kb_id = await state.get_value(LEGACY_REPLY_KB_MESSAGE_ID_KEY)
 
     for message_id in {previous_message_id, previous_media_message_id, previous_reply_kb_id} - {None}:
         try:
@@ -92,6 +116,7 @@ async def command_main_menu(
             logger.error(f"Failed to delete main message {message_id} for user {user.tg_id}: {exception}")
 
     await state.clear()
+    await remove_stale_reply_keyboard(bot=message.bot, chat_id=user.tg_id)
 
     if command.args and is_new_user:
         if command.args.isdigit():
@@ -125,66 +150,16 @@ async def command_main_menu(
         except Exception as exception:
             logger.error(f"Failed to send start image for user {user.tg_id}: {exception}")
 
-    welcome_msg = await message.answer(
-        text=text,
-        reply_markup=menu_reply_keyboard(),
-    )
     main_menu = await message.answer(
-        text=_("main_menu:message:choose_action"),
+        text=text,
         reply_markup=reply_markup,
     )
     state_data = {
         MAIN_MESSAGE_ID_KEY: main_menu.message_id,
-        REPLY_KB_MESSAGE_ID_KEY: welcome_msg.message_id,
     }
     if media_message_id:
         state_data[MAIN_MEDIA_MESSAGE_ID_KEY] = media_message_id
     await state.update_data(state_data)
-
-
-@router.message(F.text == MENU_BUTTON_TEXT)
-async def message_menu_button(
-    message: Message,
-    user: User,
-    state: FSMContext,
-    services: ServicesContainer,
-    config: Config,
-    **kwargs,
-) -> None:
-    logger.info(f"User {user.tg_id} pressed menu button.")
-    previous_message_id = await state.get_value(MAIN_MESSAGE_ID_KEY)
-    previous_media_message_id = await state.get_value(MAIN_MEDIA_MESSAGE_ID_KEY)
-    previous_reply_kb_id = await state.get_value(REPLY_KB_MESSAGE_ID_KEY)
-
-    for message_id in {previous_message_id, previous_media_message_id, previous_reply_kb_id} - {None}:
-        try:
-            await message.bot.delete_message(chat_id=user.tg_id, message_id=message_id)
-        except Exception:
-            pass
-
-    await state.clear()
-
-    is_admin = await IsAdmin()(user_id=user.tg_id)
-    reply_markup = main_menu_keyboard(
-        is_admin,
-        is_referral_available=config.shop.REFERRER_REWARD_ENABLED,
-        is_trial_available=await services.subscription.is_trial_available(user),
-        is_referred_trial_available=await services.referral.is_referred_trial_available(user),
-    )
-    text = _("main_menu:message:main").format(name=user.first_name)
-
-    welcome_msg = await message.answer(
-        text=text,
-        reply_markup=menu_reply_keyboard(),
-    )
-    main_menu = await message.answer(
-        text=_("main_menu:message:choose_action"),
-        reply_markup=reply_markup,
-    )
-    await state.update_data({
-        MAIN_MESSAGE_ID_KEY: main_menu.message_id,
-        REPLY_KB_MESSAGE_ID_KEY: welcome_msg.message_id,
-    })
 
 
 @router.callback_query(F.data == NavMain.MAIN_MENU)
@@ -197,7 +172,7 @@ async def callback_main_menu(
 ) -> None:
     logger.info(f"User {user.tg_id} returned to main menu page.")
     await state.clear()
-    await state.update_data({MAIN_MESSAGE_ID_KEY: callback.message.message_id})
+    await remove_stale_reply_keyboard(bot=callback.bot, chat_id=user.tg_id)
     is_admin = await IsAdmin()(user_id=user.tg_id)
     reply_markup = main_menu_keyboard(
         is_admin,
@@ -208,6 +183,8 @@ async def callback_main_menu(
     text = _("main_menu:message:main").format(name=user.first_name)
 
     await callback.message.edit_text(text=text, reply_markup=reply_markup)
+    await state.update_data({MAIN_MESSAGE_ID_KEY: callback.message.message_id})
+    await callback.answer()
 
 
 async def redirect_to_main_menu(
@@ -235,6 +212,7 @@ async def redirect_to_main_menu(
         is_referred_trial_available=await services.referral.is_referred_trial_available(user),
     )
     text = _("main_menu:message:main").format(name=user.first_name)
+    await remove_stale_reply_keyboard(bot=bot, chat_id=user.tg_id)
 
     try:
         await bot.edit_message_text(

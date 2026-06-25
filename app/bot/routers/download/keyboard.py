@@ -17,7 +17,19 @@ from app.bot.utils.constants import (
     APP_WINDOWS_SCHEME,
     CONNECTION_WEBHOOK,
 )
-from app.bot.utils.navigation import NavDownload, NavMain, NavSubscription, NavSupport
+from app.bot.utils.navigation import NavDownload, NavMain, NavSubscription
+
+
+def _unique_nonempty(values: list[str]) -> list[str]:
+    seen: set[str] = set()
+    result: list[str] = []
+    for value in values:
+        item = value.strip()
+        if not item or item in seen:
+            continue
+        seen.add(item)
+        result.append(item)
+    return result
 
 
 def build_connect_url(url: str, scheme: str, key: str, platform_param: str) -> str:
@@ -27,7 +39,7 @@ def build_connect_url(url: str, scheme: str, key: str, platform_param: str) -> s
 
 def build_happ_routing_base64() -> str:
     profile = {
-        "Name": "SuperBebra RU Direct",
+        "Name": "AFETZ РФ-сервисы напрямую",
         "GlobalProxy": "true",
         "RemoteDNSType": "DoH",
         "RemoteDNSDomain": "https://cloudflare-dns.com/dns-query",
@@ -43,16 +55,18 @@ def build_happ_routing_base64() -> str:
         ),
         "LastUpdated": "",
         "DnsHosts": {},
-        "DirectSites": ["geosite:CATEGORY-RU"],
-        "DirectIp": [
-            "geoip:RU",
-            "10.0.0.0/8",
-            "172.16.0.0/12",
-            "192.168.0.0/16",
-            "169.254.0.0/16",
-            "224.0.0.0/4",
-            "255.255.255.255",
-        ],
+        "DirectSites": _unique_nonempty(["geosite:CATEGORY-RU"]),
+        "DirectIp": _unique_nonempty(
+            [
+                "geoip:RU",
+                "10.0.0.0/8",
+                "172.16.0.0/12",
+                "192.168.0.0/16",
+                "169.254.0.0/16",
+                "224.0.0.0/4",
+                "255.255.255.255",
+            ]
+        ),
         "DomainStrategy": "IPIfNonMatch",
         "FakeDNS": "false",
     }
@@ -90,7 +104,7 @@ def platforms_keyboard(previous_callback: str = None) -> InlineKeyboardMarkup:
     if previous_callback == NavMain.MAIN_MENU:
         builder.row(back_to_main_menu_button())
     else:
-        back_callback = previous_callback if previous_callback else NavSupport.HOW_TO_CONNECT
+        back_callback = previous_callback if previous_callback else NavMain.MAIN_MENU
         builder.row(back_button(back_callback))
 
     return builder.as_markup()
@@ -101,6 +115,7 @@ def download_keyboard(
     url: str,
     key: str | None,
     additional_profile_key: str | None = None,
+    filtered_additional_profile_key: str | None = None,
 ) -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
 
@@ -138,6 +153,16 @@ def download_keyboard(
         if additional_profile_key
         else None
     )
+    filtered_additional_connect = (
+        build_connect_url(
+            url=url,
+            scheme=scheme,
+            key=filtered_additional_profile_key,
+            platform_param=platform_param,
+        )
+        if filtered_additional_profile_key
+        else None
+    )
 
     builder.row(
         InlineKeyboardButton(
@@ -153,6 +178,15 @@ def download_keyboard(
                 url=routing_connect,
             )
         )
+    builder.row(
+        InlineKeyboardButton(
+            text=_("download:button:connect_filtered_additional_profile"),
+            url=filtered_additional_connect if filtered_additional_profile_key else None,
+            callback_data=NavSubscription.ADDITIONAL_PROFILE
+            if not filtered_additional_profile_key
+            else None,
+        )
+    )
     builder.row(
         InlineKeyboardButton(
             text=_("download:button:connect_additional_profile"),

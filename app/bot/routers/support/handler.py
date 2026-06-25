@@ -1,9 +1,11 @@
 import logging
 
 from aiogram import F, Router
+from aiogram.fsm.context import FSMContext
 from aiogram.types import CallbackQuery
 from aiogram.utils.i18n import gettext as _
 
+from app.bot.utils.constants import PREVIOUS_CALLBACK_KEY
 from app.bot.utils.navigation import NavSupport
 from app.config import Config
 from app.db.models import User
@@ -15,8 +17,14 @@ router = Router(name=__name__)
 
 
 @router.callback_query(F.data == NavSupport.MAIN)
-async def callback_support(callback: CallbackQuery, user: User, config: Config) -> None:
+async def callback_support(
+    callback: CallbackQuery,
+    user: User,
+    config: Config,
+    state: FSMContext,
+) -> None:
     logger.info(f"User {user.tg_id} opened support page.")
+    await state.update_data({PREVIOUS_CALLBACK_KEY: NavSupport.MAIN})
     await callback.message.edit_text(
         text=_("support:message:main"),
         reply_markup=support_keyboard(config.bot.SUPPORT_ID),
@@ -24,8 +32,14 @@ async def callback_support(callback: CallbackQuery, user: User, config: Config) 
 
 
 @router.callback_query(F.data == NavSupport.HOW_TO_CONNECT)
-async def callback_how_to_connect(callback: CallbackQuery, user: User, config: Config) -> None:
+async def callback_how_to_connect(
+    callback: CallbackQuery,
+    user: User,
+    config: Config,
+    state: FSMContext,
+) -> None:
     logger.info(f"User {user.tg_id} opened how to connect page.")
+    await state.update_data({PREVIOUS_CALLBACK_KEY: NavSupport.HOW_TO_CONNECT})
     await callback.message.edit_text(
         text=_("support:message:how_to_connect"),
         reply_markup=how_to_connect_keyboard(config.bot.SUPPORT_ID),

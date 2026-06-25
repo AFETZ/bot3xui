@@ -10,7 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.bot.models import ServicesContainer, SubscriptionData
 from app.bot.payment_gateways import GatewayFactory
 from app.bot.utils.constants import Currency
-from app.bot.utils.formatting import format_device_count, format_subscription_period
+from app.bot.utils.formatting import format_date, format_device_count, format_subscription_period
 from app.bot.utils.time import get_current_timestamp
 from app.bot.utils.navigation import NavSubscription
 from app.config import Config
@@ -19,10 +19,13 @@ from app.db.models import User
 from .keyboard import (
     additional_profile_keyboard,
     change_apply_confirm_keyboard,
+    change_mode_keyboard,
     devices_keyboard,
     duration_keyboard,
     payment_method_keyboard,
     plan_change_keyboard,
+    scheduled_confirm_keyboard,
+    scheduled_plan_keyboard,
     subscription_keyboard,
     upgrade_offer_keyboard,
 )
@@ -59,11 +62,24 @@ def _build_subscription_text(status) -> str:
             "",
         ]
 
+        pending_plan_code = getattr(status.user, "pending_plan_code", None)
+        if pending_plan_code:
+            pending_starts_at = getattr(status.user, "pending_plan_starts_at", None)
+            pending_start = format_date(pending_starts_at) if pending_starts_at else status.expiry_date
+            lines.extend(
+                [
+                    f"Следующий тариф: {pending_plan_code}",
+                    f"Старт после текущей подписки: {pending_start}",
+                    "Списание сейчас: нет",
+                    "",
+                ]
+            )
+
         if status.has_additional_profile:
             lines.extend(
                 [
                     "Основной профиль:",
-                    "Обход белых списков:",
+                    "Подписка обхода БС:",
                     "",
                 ]
             )
@@ -85,11 +101,11 @@ def _build_additional_profile_text(
 ) -> str:
     if status.has_additional_profile:
         return (
-            "Обход белых списков\n\n"
+            "Подписка обхода БС\n\n"
             "Статус: подключен\n"
             f"Текущий тариф: {_get_plan_title(status)}\n"
             f"Активна до: {status.expiry_date}\n\n"
-            "Ссылки на основной профиль и профиль для обхода белых списков доступны ниже."
+            "Основная подписка, рекомендуемый вариант обхода БС и запасной вариант доступны ниже."
         )
 
     if quote:
@@ -100,7 +116,7 @@ def _build_additional_profile_text(
             else "-"
         )
         return (
-            "Обход белых списков\n\n"
+            "Подписка обхода БС\n\n"
             "Подключается только вместе с активной основной подпиской и начинает работать сразу после оплаты.\n\n"
             f"Текущий тариф: {_get_plan_title(status)}\n"
             f"Активна до: {status.expiry_date}\n"
@@ -110,20 +126,20 @@ def _build_additional_profile_text(
             f"за {quote.renewal_price} {currency_symbol} "
             f"на {format_subscription_period(quote.renewal_duration_days)}\n\n"
             "После оплаты дата окончания текущей подписки не изменится. При следующем продлении "
-            "бот предложит тариф уже с обходом белых списков."
+            "бот предложит тариф уже с подпиской обхода БС."
         )
 
     if status.is_active:
         return (
-            "Обход белых списков\n\n"
-            "Опция доступна на тарифах с обходом белых списков.\n"
+            "Подписка обхода БС\n\n"
+            "Опция доступна на тарифах с обходом БС.\n"
             "Откройте раздел подписки, чтобы выбрать подходящий тариф или улучшить текущий."
         )
 
     return (
-        "Обход белых списков\n\n"
-        "Оформите тариф с обходом белых списков в разделе подписки, "
-        "чтобы получить основную ссылку и профиль для обхода белых списков."
+        "Подписка обхода БС\n\n"
+        "Оформите тариф с обходом БС в разделе подписки, "
+        "чтобы получить основную подписку, рекомендуемый вариант обхода БС и запасной вариант."
     )
 
 
@@ -141,6 +157,11 @@ async def show_subscription(
         if status.has_additional_profile
         else None
     )
+    filtered_additional_profile_url = (
+        services.subscription.get_filtered_additional_profile_url(user)
+        if status.has_additional_profile
+        else None
+    )
 
     await callback.message.edit_text(
         text=_build_subscription_text(status),
@@ -151,7 +172,47 @@ async def show_subscription(
             show_upgrade=show_upgrade,
             show_primary_profile=status.has_additional_profile,
             additional_profile_url=additional_profile_url,
+            filtered_additional_profile_url=filtered_additional_profile_url,
         ),
+    )
+
+
+@router.callback_query(SubscriptionData.filter(F.state == NavSubscription.CHANGE_MODE))
+async def callback_subscription_change_mode(
+    callback: CallbackQuery,
+    user: User,
+    callback_data: SubscriptionData,
+    config: Config,
+    services: ServicesContainer,
+) -> None:
+    logger.info("User %s opened tariff change mode screen.", user.tg_id)
+    status = await services.subscription.get_subscription_status(user)
+    if not status.status_check_ok or not status.is_active:
+        await services.notification.show_popup(
+            callback=callback,
+            text="Смена тарифа сейчас недоступна.",
+        )
+        return
+
+    trial_hint = ""
+    if getattr(user, "current_plan_code", None) == config.shop.TRIAL_PLAN_CODE:
+        trial_hint = (
+            "\nДля пробной подписки можно заранее выбрать следующий тариф "
+            "без списания сейчас."
+        )
+
+    text = (
+        "Изменение тарифа\n\n"
+        f"Текущий тариф: {_get_plan_title(status)}\n"
+        f"Активна до: {status.expiry_date}\n\n"
+        "Сменить сейчас — бот посчитает доплату за оставшийся срок, дата окончания не изменится.\n"
+        "Запланировать следующий — списания сейчас не будет, выбранный тариф начнёт действовать "
+        "после окончания текущей подписки после оплаты следующего периода."
+        f"{trial_hint}"
+    )
+    await callback.message.edit_text(
+        text=text,
+        reply_markup=change_mode_keyboard(callback_data),
     )
 
 
@@ -194,6 +255,11 @@ async def callback_additional_profile(
         if status.has_additional_profile
         else None
     )
+    filtered_additional_profile_url = (
+        services.subscription.get_filtered_additional_profile_url(user)
+        if status.has_additional_profile
+        else None
+    )
 
     upgrade_callback_data = None
     quote = None
@@ -217,6 +283,7 @@ async def callback_additional_profile(
         ),
         reply_markup=additional_profile_keyboard(
             additional_profile_url=additional_profile_url,
+            filtered_additional_profile_url=filtered_additional_profile_url,
             upgrade_callback_data=upgrade_callback_data,
             show_primary_profile=status.has_additional_profile,
         ),
@@ -312,6 +379,145 @@ async def callback_subscription_change(
     await callback.message.edit_text(
         text=text,
         reply_markup=plan_change_keyboard(quotes, callback_data, currency.symbol),
+    )
+
+
+@router.callback_query(SubscriptionData.filter(F.state == NavSubscription.SCHEDULE))
+async def callback_subscription_schedule(
+    callback: CallbackQuery,
+    user: User,
+    callback_data: SubscriptionData,
+    services: ServicesContainer,
+) -> None:
+    logger.info("User %s opened scheduled tariff selection.", user.tg_id)
+    status = await services.subscription.get_subscription_status(user)
+    if not status.status_check_ok or not status.is_active or not status.expiry_timestamp:
+        await services.notification.show_popup(
+            callback=callback,
+            text="Запланировать следующий тариф сейчас недоступно.",
+        )
+        return
+
+    plans = services.plan.get_all_plans(
+        prefer_additional_profile=bool(status.plan and status.plan.includes_additional_profile)
+    )
+    if not plans:
+        await services.notification.show_popup(
+            callback=callback,
+            text=_("subscription:popup:error_fetching_plan"),
+        )
+        return
+
+    default_duration = services.subscription._get_default_duration_days()
+    text = (
+        "Следующий тариф\n\n"
+        f"Текущая подписка активна до: {status.expiry_date}\n"
+        "Сейчас списания не будет. Бот сохранит выбранный тариф и предложит оплатить "
+        "его после окончания текущей подписки.\n\n"
+        "Выберите тариф:"
+    )
+    await callback.message.edit_text(
+        text=text,
+        reply_markup=scheduled_plan_keyboard(
+            plans,
+            callback_data,
+            default_duration_days=default_duration,
+        ),
+    )
+
+
+@router.callback_query(SubscriptionData.filter(F.state == NavSubscription.SCHEDULE_CONFIRM))
+async def callback_subscription_schedule_confirm(
+    callback: CallbackQuery,
+    user: User,
+    callback_data: SubscriptionData,
+    services: ServicesContainer,
+) -> None:
+    logger.info(
+        "User %s selected scheduled tariff candidate: plan=%s devices=%s.",
+        user.tg_id,
+        callback_data.plan_code,
+        callback_data.devices,
+    )
+    status = await services.subscription.get_subscription_status(user)
+    target_plan = services.plan.get_plan_by_code(callback_data.plan_code)
+    if not status.status_check_ok or not status.is_active or not target_plan:
+        await services.notification.show_popup(
+            callback=callback,
+            text="Запланировать следующий тариф сейчас недоступно.",
+        )
+        return
+
+    callback_data.devices = target_plan.devices
+    callback_data.plan_code = target_plan.code
+    callback_data.duration = callback_data.duration or services.subscription._get_default_duration_days()
+    callback_data.price = 0
+    callback_data.is_change = False
+    callback_data.is_extend = False
+    callback_data.is_upgrade = False
+
+    text = (
+        "Подтвердите следующий тариф\n\n"
+        f"Текущий тариф: {_get_plan_title(status)}\n"
+        f"Активна до: {status.expiry_date}\n"
+        f"Следующий тариф: {target_plan.title or format_device_count(target_plan.devices)}\n"
+        f"Период после оплаты: {format_subscription_period(callback_data.duration)}\n\n"
+        "Списание сейчас: нет.\n"
+        "Дата окончания текущей подписки не изменится.\n"
+        "Когда текущая подписка закончится, бот напомнит оплатить выбранный тариф."
+    )
+    await callback.message.edit_text(
+        text=text,
+        reply_markup=scheduled_confirm_keyboard(callback_data),
+    )
+
+
+@router.callback_query(SubscriptionData.filter(F.state == NavSubscription.SCHEDULE_APPLY))
+async def callback_subscription_schedule_apply(
+    callback: CallbackQuery,
+    user: User,
+    callback_data: SubscriptionData,
+    services: ServicesContainer,
+) -> None:
+    logger.info(
+        "User %s confirmed scheduled tariff: plan=%s devices=%s.",
+        user.tg_id,
+        callback_data.plan_code,
+        callback_data.devices,
+    )
+    status = await services.subscription.get_subscription_status(user)
+    target_plan = services.plan.get_plan_by_code(callback_data.plan_code)
+    if not status.status_check_ok or not status.is_active or not target_plan:
+        await services.notification.show_popup(
+            callback=callback,
+            text="Запланировать следующий тариф сейчас недоступно.",
+        )
+        return
+
+    duration = callback_data.duration or services.subscription._get_default_duration_days()
+    await services.subscription.schedule_next_plan(
+        user=user,
+        plan_code=target_plan.code,
+        period_duration_days=duration,
+        starts_at=status.expiry_timestamp,
+    )
+
+    refreshed_status = await services.subscription.get_subscription_status(user)
+    refreshed_callback_data = SubscriptionData(
+        state=NavSubscription.PROCESS,
+        user_id=user.tg_id,
+        plan_code=refreshed_status.plan.code if refreshed_status.plan else "",
+    )
+    await show_subscription(
+        callback=callback,
+        user=user,
+        status=refreshed_status,
+        callback_data=refreshed_callback_data,
+        services=services,
+    )
+    await services.notification.show_popup(
+        callback=callback,
+        text="Следующий тариф запланирован.",
     )
 
 
@@ -458,7 +664,7 @@ async def callback_change_confirm(
             and not target_plan.includes_additional_profile
         ):
             warning_lines.append(
-                "Обход белых списков будет отключён — ссылка БС перестанет работать."
+                "Подписка обхода БС будет отключена."
             )
 
         warning_block = ""
@@ -617,7 +823,7 @@ async def callback_subscription_upgrade(
     if not quote:
         await services.notification.show_popup(
             callback=callback,
-            text="Подключение обхода белых списков сейчас недоступно.",
+            text="Подключение подписки обхода БС сейчас недоступно.",
         )
         return
 
@@ -658,7 +864,7 @@ async def callback_subscription_upgrade_payment(
     if not status.status_check_ok or not status.is_active or not current_plan or not target_plan:
         await services.notification.show_popup(
             callback=callback,
-            text="Подключение обхода белых списков сейчас недоступно.",
+            text="Подключение подписки обхода БС сейчас недоступно.",
         )
         return
 
@@ -667,7 +873,7 @@ async def callback_subscription_upgrade_payment(
     if not display_quote:
         await services.notification.show_popup(
             callback=callback,
-            text="Подключение обхода белых списков сейчас недоступно.",
+            text="Подключение подписки обхода БС сейчас недоступно.",
         )
         return
 

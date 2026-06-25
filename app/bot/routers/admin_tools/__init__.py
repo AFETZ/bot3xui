@@ -1,6 +1,7 @@
 from . import (
     admin_tools_handler,
     backup_handler,
+    health_handler,
     invites_handler,
     maintenance_handler,
     notification_handler,

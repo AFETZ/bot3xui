@@ -31,7 +31,7 @@ def change_subscription_button() -> InlineKeyboardButton:
 
 def upgrade_subscription_button() -> InlineKeyboardButton:
     return InlineKeyboardButton(
-        text="Подключить обход белых списков",
+        text="Подключить подписку обхода БС",
         callback_data=NavSubscription.ADDITIONAL_PROFILE,
     )
 
@@ -44,6 +44,7 @@ def subscription_keyboard(
     show_upgrade: bool = False,
     show_primary_profile: bool = False,
     additional_profile_url: str | None = None,
+    filtered_additional_profile_url: str | None = None,
 ) -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
 
@@ -58,15 +59,23 @@ def subscription_keyboard(
         if show_primary_profile:
             builder.row(
                 InlineKeyboardButton(
-                    text="Получить основную ссылку",
+                    text="Подключить основную подписку",
                     callback_data=NavProfile.SHOW_KEY,
+                )
+            )
+
+        if filtered_additional_profile_url:
+            builder.row(
+                InlineKeyboardButton(
+                    text="Подписка обхода БС — рекомендуется",
+                    url=filtered_additional_profile_url,
                 )
             )
 
         if additional_profile_url:
             builder.row(
                 InlineKeyboardButton(
-                    text="Получить ссылку обхода белых списков",
+                    text="Подписка обхода БС — запасной вариант",
                     url=additional_profile_url,
                 )
             )
@@ -80,7 +89,7 @@ def subscription_keyboard(
         )
 
         if show_change:
-            callback_data.state = NavSubscription.CHANGE
+            callback_data.state = NavSubscription.CHANGE_MODE
             builder.row(
                 InlineKeyboardButton(
                     text=_("subscription:button:change"),
@@ -97,6 +106,27 @@ def subscription_keyboard(
             callback_data=NavSubscription.PROMOCODE,
         )
     )
+    builder.row(back_to_main_menu_button())
+    return builder.as_markup()
+
+
+def change_mode_keyboard(callback_data: SubscriptionData) -> InlineKeyboardMarkup:
+    builder = InlineKeyboardBuilder()
+    callback_data.state = NavSubscription.CHANGE
+    builder.row(
+        InlineKeyboardButton(
+            text="Сменить тариф сейчас",
+            callback_data=callback_data.pack(),
+        )
+    )
+    callback_data.state = NavSubscription.SCHEDULE
+    builder.row(
+        InlineKeyboardButton(
+            text="Запланировать следующий тариф",
+            callback_data=callback_data.pack(),
+        )
+    )
+    builder.row(back_button(NavSubscription.MAIN))
     builder.row(back_to_main_menu_button())
     return builder.as_markup()
 
@@ -124,6 +154,54 @@ def plan_change_keyboard(
 
     builder.adjust(1)
     builder.row(back_button(NavSubscription.MAIN))
+    builder.row(back_to_main_menu_button())
+    return builder.as_markup()
+
+
+def scheduled_plan_keyboard(
+    plans: list[Plan],
+    callback_data: SubscriptionData,
+    *,
+    default_duration_days: int,
+) -> InlineKeyboardMarkup:
+    builder = InlineKeyboardBuilder()
+
+    callback_data.state = NavSubscription.SCHEDULE_CONFIRM
+    callback_data.is_change = False
+    callback_data.is_extend = False
+    callback_data.is_upgrade = False
+    callback_data.duration = default_duration_days
+    callback_data.price = 0
+
+    for plan in plans:
+        callback_data.devices = plan.devices
+        callback_data.plan_code = plan.code
+        label = plan.title or format_device_count(plan.devices)
+        if plan.is_popular:
+            label = f"🔥 {label}"
+        builder.button(
+            text=f"{label} | после текущей",
+            callback_data=callback_data.pack(),
+        )
+
+    builder.adjust(1)
+    callback_data.state = NavSubscription.CHANGE_MODE
+    builder.row(back_button(callback_data.pack()))
+    builder.row(back_to_main_menu_button())
+    return builder.as_markup()
+
+
+def scheduled_confirm_keyboard(callback_data: SubscriptionData) -> InlineKeyboardMarkup:
+    builder = InlineKeyboardBuilder()
+    callback_data.state = NavSubscription.SCHEDULE_APPLY
+    builder.row(
+        InlineKeyboardButton(
+            text="Купить после окончания текущей",
+            callback_data=callback_data.pack(),
+        )
+    )
+    callback_data.state = NavSubscription.SCHEDULE
+    builder.row(back_button(callback_data.pack(), text="Назад к выбору тарифа"))
     builder.row(back_to_main_menu_button())
     return builder.as_markup()
 
@@ -301,6 +379,7 @@ def upgrade_offer_keyboard(callback_data: SubscriptionData) -> InlineKeyboardMar
 def additional_profile_keyboard(
     *,
     additional_profile_url: str | None = None,
+    filtered_additional_profile_url: str | None = None,
     upgrade_callback_data: str | None = None,
     show_primary_profile: bool = False,
 ) -> InlineKeyboardMarkup:
@@ -309,15 +388,23 @@ def additional_profile_keyboard(
     if show_primary_profile:
         builder.row(
             InlineKeyboardButton(
-                text="Получить основную ссылку",
+                text="Подключить основную подписку",
                 callback_data=NavProfile.SHOW_KEY,
+            )
+        )
+
+    if filtered_additional_profile_url:
+        builder.row(
+            InlineKeyboardButton(
+                text="Подписка обхода БС — рекомендуется",
+                url=filtered_additional_profile_url,
             )
         )
 
     if additional_profile_url:
         builder.row(
             InlineKeyboardButton(
-                text="Получить ссылку обхода белых списков",
+                text="Подписка обхода БС — запасной вариант",
                 url=additional_profile_url,
             )
         )
@@ -325,7 +412,7 @@ def additional_profile_keyboard(
     if upgrade_callback_data:
         builder.row(
             InlineKeyboardButton(
-                text="Подключить обход белых списков",
+                text="Подключить подписку обхода БС",
                 callback_data=upgrade_callback_data,
             )
         )

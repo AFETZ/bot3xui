@@ -3,6 +3,7 @@
 Production Telegram bot for selling and managing VPN subscriptions through 3X-UI.
 
 [![Release](https://img.shields.io/github/v/tag/AFETZ/bot3xui?label=release)](https://github.com/AFETZ/bot3xui/tags)
+[![CI](https://github.com/AFETZ/bot3xui/actions/workflows/ci.yml/badge.svg)](https://github.com/AFETZ/bot3xui/actions/workflows/ci.yml)
 [![Python](https://img.shields.io/badge/python-3.12-blue)](https://www.python.org/)
 [![Telegram](https://img.shields.io/badge/Telegram-bot-229ED9)](https://telegram.org/)
 [![License](https://img.shields.io/github/license/AFETZ/bot3xui)](LICENSE)
@@ -11,7 +12,7 @@ Production Telegram bot for selling and managing VPN subscriptions through 3X-UI
 
 **AFZVPN Bot** - продовая версия Telegram-бота для продажи VPN-подписок. Он связывает пользователей Telegram, оплаты, клиентов 3X-UI, тарифы, промокоды, поддержку и админские инструменты в один рабочий сервис.
 
-Проект вырос из идеи `3xui-shop`, но этот репозиторий поддерживается как кастомная сборка AFZVPN: с продовыми правками, Happ-онбордингом, дополнительными профилями, RU Direct, админкой и операционными скриптами.
+Проект вырос из идеи `3xui-shop`, но этот репозиторий поддерживается как кастомная сборка AFZVPN: с продовыми правками, Happ-онбордингом, подпиской обхода БС, админкой и операционными скриптами.
 
 ## Основные Возможности
 
@@ -19,10 +20,10 @@ Production Telegram bot for selling and managing VPN subscriptions through 3X-UI
 - интеграция с 3X-UI для создания, продления, проверки и управления клиентами
 - тарифы с разными сроками, валютами и количеством устройств
 - one-click подключение в Happ для iOS, Android и Windows
-- **RU Direct для Happ**: российские сервисы идут напрямую, зарубежный трафик идет через VPN
+- **РФ-сервисы напрямую, остальное через VPN**: отдельный режим Happ для удобной работы российских сервисов
 - прокси основного профиля `/sub/{vpn_id}` с проверкой активной подписки
-- профиль обхода белых списков `/wl/{vpn_id}` для подходящих тарифов
-- дополнительные тарифы с обходом белых списков
+- подписка обхода БС для тарифов, где она включена
+- рекомендуемый источник обхода БС `/wl-filtered/{vpn_id}` и запасной источник `/wl/{vpn_id}`
 - пробный период и реферальные бонусы
 - многоразовые промокоды с лимитами активаций
 - платежи: Telegram Stars, YooKassa, YooMoney, Cryptomus, Heleket
@@ -37,21 +38,24 @@ Production Telegram bot for selling and managing VPN subscriptions through 3X-UI
 3. После оплаты бот создает или продлевает клиента в 3X-UI.
 4. Пользователь открывает **Профиль -> Подключиться -> Выбор платформы**.
 5. Бот дает кнопки:
-   - основной профиль Happ
-   - настройка RU Direct в Happ
-   - профиль обхода белых списков, если он включен в тариф
+   - **Подключить основную подписку**
+   - **РФ-сервисы напрямую, остальное через VPN**
+   - **Подписка обхода БС — рекомендуется**, если она включена в тариф
+   - **Подписка обхода БС — запасной вариант**, если рекомендованный вариант не подошел
 
-## RU Direct
+Основная подписка и подписка обхода БС - разные подключения. БС означает "белые списки"; этот термин уже используется в тарифах и поддержке.
 
-RU Direct - routing-профиль для Happ, чтобы пользователю не приходилось постоянно включать и выключать VPN:
+## Режим Для РФ
+
+Режим **РФ-сервисы напрямую, остальное через VPN** - отдельная настройка Happ, чтобы пользователю не приходилось постоянно включать и выключать VPN:
 
 - российские домены и российские IP идут напрямую
 - зарубежные сервисы продолжают идти через VPN
-- настройка включается одной кнопкой: **Профиль -> Подключиться -> Выбор платформы -> Настроить RU Direct в Happ**
+- настройка включается одной кнопкой: **Профиль -> Подключиться -> Выбор платформы -> РФ-сервисы напрямую, остальное через VPN**
 
 Это удобно, если пользователю нужны российские банки, маркетплейсы, госуслуги и локальные приложения, но при этом зарубежные сервисы должны оставаться доступными через VPN.
 
-RU Direct считается beta-функцией: маршруты могут донастраиваться по обратной связи пользователей.
+Маршруты могут донастраиваться по обратной связи пользователей.
 
 ## Админка
 
@@ -75,7 +79,8 @@ RU Direct считается beta-функцией: маршруты могут 
 | `/webhook` | Telegram webhook |
 | `/connection` | redirect для deep-link в Happ |
 | `/sub/{vpn_id}` | прокси основного профиля |
-| `/wl/{vpn_id}` | прокси профиля обхода белых списков |
+| `/wl-filtered/{vpn_id}` | рекомендуемая подписка обхода БС |
+| `/wl/{vpn_id}` | запасная подписка обхода БС |
 | `/yookassa` | YooKassa webhook |
 | `/yoomoney` | YooMoney webhook |
 | `/cryptomus` | Cryptomus webhook |
@@ -131,13 +136,17 @@ docker compose up -d --build bot
 | `BOT_DOMAIN` | публичный домен, например `https://example.com` |
 | `BOT_HOST` | host для Traefik labels или deploy-конфига |
 | `BOT_USE_WEBHOOK` | `True` для webhook, `False` для polling |
-| `BOT_PROXY_URL` | optional SOCKS5 proxy для Telegram API |
+| `BOT_PROXY_URL` | optional SOCKS5 proxy для Telegram API; если proxy недоступен, бот стартует без него |
+| `BOT_PROXY_STRICT` | `True`, если недоступный `BOT_PROXY_URL` должен останавливать старт |
+| `BOT_PROXY_CHECK_TIMEOUT` | таймаут проверки proxy в секундах |
 | `XUI_USERNAME` | логин 3X-UI |
 | `XUI_PASSWORD` | пароль 3X-UI |
 | `XUI_SUBSCRIPTION_SCHEME` | схема subscription URL |
 | `XUI_SUBSCRIPTION_PORT` | порт подписки |
 | `XUI_SUBSCRIPTION_PATH` | path подписки |
 | `SHOP_CURRENCY` | основная валюта магазина |
+| `LOG_MAX_BYTES` | максимальный размер `app/logs/app.log`, по умолчанию 10485760 |
+| `LOG_BACKUP_COUNT` | сколько архивов `app.log` хранить, по умолчанию 5 |
 | `SHOP_PAYMENT_STARS_ENABLED` | включить Telegram Stars |
 | `SHOP_PAYMENT_YOOKASSA_ENABLED` | включить YooKassa |
 | `SHOP_PAYMENT_YOOMONEY_ENABLED` | включить YooMoney |
@@ -161,7 +170,7 @@ docker compose up -d --build bot
 - `includes_additional_profile`
 - `upgrade_from`
 
-Тарифы с `includes_additional_profile: true` открывают профиль обхода белых списков.
+Тарифы с `includes_additional_profile: true` открывают подписку обхода БС.
 
 ## Тесты
 
@@ -171,16 +180,22 @@ docker compose up -d --build bot
 ./.venv/bin/pytest
 ```
 
-Проверка релиза:
+Через Poetry:
+
+```bash
+poetry run pytest
+```
+
+Последняя проверка перед baseline-коммитом:
 
 ```text
-44 passed
+21 passed
 ```
 
 ## Production Notes
 
 - `main` - продовая ветка.
-- `v1` - первый production release tag этой кастомной AFZVPN-сборки.
+- `v1.1.0` - текущий baseline release этой кастомной AFZVPN-сборки.
 - Runtime state живет вне Git: `.env`, `.local/`, Redis data, logs, certs, database backups.
 - Перед крупными деплоями делайте backup bundle и архив рабочего дерева.
 
@@ -188,9 +203,14 @@ docker compose up -d --build bot
 
 Проект вырос из open-source экосистемы `3xui-shop` и адаптирован под production-задачи AFZVPN.
 
-Профиль обхода белых списков `/wl/{vpn_id}` отдает Universal-подписку через
+Запасная подписка обхода БС `/wl/{vpn_id}` отдает Universal-подписку через
 серверный fallback по зеркалам. Пользовательская ссылка остается одной и той же.
 
-Внешний источник правил для Universal-профиля обхода белых списков:
+Рекомендуемая подписка обхода БС `/wl-filtered/{vpn_id}` отдает легкую
+мобильную подписку из `igareck/vpn-configs-for-russia` через отдельный fallback
+по зеркалам. Доступ открыт тем же тарифам с `includes_additional_profile`.
+
+Внешние источники правил для подписки обхода БС:
 
 - https://github.com/zieng2/wl
+- https://github.com/igareck/vpn-configs-for-russia

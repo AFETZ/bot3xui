@@ -5,14 +5,21 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from .server_pool import Connection, ServerPoolService
 
+import asyncio
 import logging
 import math
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from py3xui import Client, Inbound
 from sqlalchemy.ext.asyncio import async_sessionmaker
 
 from app.bot.models import ClientData
+from app.bot.services.subscription_state import (
+    SUBSCRIPTION_SYNC_STATUS_ERROR,
+    SUBSCRIPTION_SYNC_STATUS_OK,
+    client_data_snapshot_updates,
+)
+from app.bot.services.xui_gateway import XuiGateway
 from app.bot.utils.network import extract_base_url
 from app.bot.utils.time import (
     add_days_to_timestamp,
@@ -23,6 +30,14 @@ from app.config import Config
 from app.db.models import Promocode, Server, User
 
 logger = logging.getLogger(__name__)
+
+
+def _redact_identifier(value: str | None) -> str:
+    if not value:
+        return "-"
+    if len(value) <= 8:
+        return "***"
+    return f"{value[:4]}...{value[-4:]}"
 
 
 @dataclass(frozen=True)
@@ -38,6 +53,12 @@ class UpstreamProfileSource:
     url: str
 
 
+@dataclass
+class InboundCache:
+    inbounds_by_server_id: dict[int, list[Inbound] | None] = field(default_factory=dict)
+    locks_by_server_id: dict[int, asyncio.Lock] = field(default_factory=dict)
+
+
 class VPNService:
     def __init__(
         self,
@@ -48,6 +69,7 @@ class VPNService:
         self.config = config
         self.session = session
         self.server_pool_service = server_pool_service
+        self.xui_gateway = XuiGateway()
         logger.info("VPN Service initialized.")
 
     @staticmethod
@@ -77,6 +99,51 @@ class VPNService:
             return "xtls-rprx-vision"
         return ""
 
+    async def _persist_subscription_snapshot(
+        self,
+        user: User,
+        client_data: ClientData | None,
+        *,
+        status: str,
+    ) -> None:
+        updates = client_data_snapshot_updates(client_data=client_data, status=status)
+        try:
+            async with self.session() as session:
+                await User.update(session=session, tg_id=user.tg_id, **updates)
+        except Exception as exception:
+            logger.warning(
+                "Failed to persist local subscription snapshot for user %s: %s",
+                user.tg_id,
+                exception,
+            )
+            return
+
+        for key, value in updates.items():
+            try:
+                setattr(user, key, value)
+            except Exception:
+                pass
+
+    async def _mark_subscription_sync_failed(self, user: User, exception: Exception) -> None:
+        updates = {"subscription_sync_status": SUBSCRIPTION_SYNC_STATUS_ERROR}
+        try:
+            async with self.session() as session:
+                await User.update(session=session, tg_id=user.tg_id, **updates)
+        except Exception:
+            logger.debug(
+                "Failed to mark local subscription sync error for user %s.",
+                user.tg_id,
+                exc_info=True,
+            )
+        logger.warning(
+            "Subscription snapshot sync failed for user %s: %s",
+            user.tg_id,
+            exception,
+        )
+
+    async def refresh_subscription_snapshot(self, user: User) -> ClientData | None:
+        return await self.get_client_data(user=user, raise_on_error=False)
+
     async def is_client_exists(self, user: User) -> Client | None:
         connection = await self.server_pool_service.get_connection(user)
 
@@ -84,7 +151,7 @@ class VPNService:
             return None
 
         try:
-            client = await connection.api.client.get_by_email(str(user.tg_id))
+            client = await self.xui_gateway.get_client_by_email(connection, str(user.tg_id))
         except Exception as exception:
             logger.error(f"Error checking client {user.tg_id} on server {connection.server.name}: {exception}")
             return None
@@ -96,19 +163,51 @@ class VPNService:
 
         return client
 
+    async def _fetch_inbounds_from_connection(
+        self,
+        connection: "Connection",
+    ) -> list[Inbound] | None:
+        try:
+            return await self.xui_gateway.get_inbound_list(connection)
+        except Exception as exception:
+            logger.error(f"Failed to fetch inbounds: {exception}")
+            return None
+
+    async def _get_inbounds_from_connection(
+        self,
+        connection: "Connection",
+        inbound_cache: InboundCache | None = None,
+    ) -> list[Inbound] | None:
+        server_id = getattr(connection.server, "id", None)
+        if inbound_cache is None or server_id is None:
+            return await self._fetch_inbounds_from_connection(connection)
+
+        if server_id in inbound_cache.inbounds_by_server_id:
+            return inbound_cache.inbounds_by_server_id[server_id]
+
+        lock = inbound_cache.locks_by_server_id.setdefault(server_id, asyncio.Lock())
+        async with lock:
+            if server_id not in inbound_cache.inbounds_by_server_id:
+                inbound_cache.inbounds_by_server_id[server_id] = (
+                    await self._fetch_inbounds_from_connection(connection)
+                )
+            return inbound_cache.inbounds_by_server_id[server_id]
+
     async def _get_limit_ip_from_connection(
         self,
         connection: "Connection",
         client: Client | None,
+        inbound_cache: InboundCache | None = None,
     ) -> int | None:
         if client is None:
             logger.warning("Cannot resolve limit_ip: client is missing.")
             return None
 
-        try:
-            inbounds: list[Inbound] = await connection.api.inbound.get_list()
-        except Exception as exception:
-            logger.error(f"Failed to fetch inbounds: {exception}")
+        inbounds = await self._get_inbounds_from_connection(
+            connection=connection,
+            inbound_cache=inbound_cache,
+        )
+        if inbounds is None:
             return None
 
         for inbound in inbounds:
@@ -132,23 +231,14 @@ class VPNService:
 
         return await self._get_limit_ip_from_connection(connection=connection, client=client)
 
-    async def _get_client_data(
+    async def _get_client_data_from_connection(
         self,
         user: User,
-        *,
-        raise_on_error: bool,
+        connection: "Connection",
+        inbound_cache: InboundCache | None = None,
     ) -> ClientData | None:
-        logger.debug(f"Starting to retrieve client data for {user.tg_id}.")
-
-        connection = await self.server_pool_service.get_connection(user)
-
-        if not connection:
-            if raise_on_error and user.server_id:
-                raise RuntimeError(f"Connection for user {user.tg_id} is unavailable.")
-            return None
-
         try:
-            client = await connection.api.client.get_by_email(str(user.tg_id))
+            client = await self.xui_gateway.get_client_by_email(connection, str(user.tg_id))
 
             if not client:
                 logger.critical(
@@ -156,17 +246,19 @@ class VPNService:
                 )
                 return None
 
-            limit_ip = await self.get_limit_ip(user=user, client=client)
+            limit_ip = await self._get_limit_ip_from_connection(
+                connection=connection,
+                client=client,
+                inbound_cache=inbound_cache,
+            )
             if limit_ip is None:
                 logger.warning(
                     "Client %s exists but limit_ip was not found in inbounds.",
                     user.tg_id,
                 )
-                if raise_on_error:
-                    raise RuntimeError(
-                        f"Failed to resolve device limit for user {user.tg_id}."
-                    )
-                return None
+                raise RuntimeError(
+                    f"Failed to resolve device limit for user {user.tg_id}."
+                )
 
             max_devices = -1 if limit_ip == 0 else limit_ip
             traffic_total = client.total
@@ -198,15 +290,133 @@ class VPNService:
                     user.tg_id,
                 )
                 return None
-            if raise_on_error:
-                raise RuntimeError(
-                    f"Failed to retrieve client data for user {user.tg_id}."
-                ) from exception
-            logger.error(f"Error retrieving client data for {user.tg_id}: {exception}")
+            raise RuntimeError(
+                f"Failed to retrieve client data for user {user.tg_id} "
+                f"from server {connection.server.name}."
+            ) from exception
+
+    async def _get_client_data(
+        self,
+        user: User,
+        *,
+        raise_on_error: bool,
+        inbound_cache: InboundCache | None = None,
+    ) -> ClientData | None:
+        logger.debug(f"Starting to retrieve client data for {user.tg_id}.")
+
+        assigned_connection = await self.server_pool_service.get_connection(user)
+        connections: list["Connection"] = []
+        if assigned_connection:
+            connections.append(assigned_connection)
+
+        get_profile_connections = getattr(
+            self.server_pool_service,
+            "get_profile_connections",
+            None,
+        )
+        if get_profile_connections:
+            try:
+                profile_connections = await get_profile_connections()
+            except Exception as exception:
+                logger.warning(
+                    "Failed to get fallback profile connections for user %s: %s",
+                    user.tg_id,
+                    exception,
+                )
+            else:
+                seen_server_ids = {
+                    getattr(connection.server, "id", None) for connection in connections
+                }
+                connections.extend(
+                    connection
+                    for connection in profile_connections
+                    if getattr(connection.server, "id", None) not in seen_server_ids
+                )
+
+        if not connections:
+            if raise_on_error and user.server_id:
+                raise RuntimeError(f"Connection for user {user.tg_id} is unavailable.")
             return None
 
-    async def get_client_data(self, user: User, raise_on_error: bool = False) -> ClientData | None:
-        return await self._get_client_data(user=user, raise_on_error=raise_on_error)
+        async def fetch_client_data(
+            connection: "Connection",
+        ) -> tuple["Connection", ClientData | None, Exception | None]:
+            try:
+                client_data = await self._get_client_data_from_connection(
+                    user=user,
+                    connection=connection,
+                    inbound_cache=inbound_cache,
+                )
+            except Exception as exception:
+                logger.warning(
+                    "Failed to retrieve client data for user %s from server %s: %s",
+                    user.tg_id,
+                    connection.server.name,
+                    exception,
+                )
+                return connection, None, exception
+            return connection, client_data, None
+
+        errors: list[Exception] = []
+        for connection in connections:
+            connection, client_data, exception = await fetch_client_data(connection)
+            if exception:
+                errors.append(exception)
+                continue
+
+            if client_data is None:
+                continue
+
+            if (
+                assigned_connection
+                and connection.server.id != assigned_connection.server.id
+            ):
+                logger.debug(
+                    "Using server %s as subscription status fallback for user %s "
+                    "instead of assigned server %s.",
+                    connection.server.name,
+                    user.tg_id,
+                    assigned_connection.server.name,
+                )
+            return client_data
+
+        if errors:
+            if raise_on_error:
+                raise RuntimeError(
+                    f"Failed to retrieve client data for user {user.tg_id} "
+                    "from all available servers."
+                ) from errors[-1]
+            logger.error(
+                "Error retrieving client data for %s from all available servers.",
+                user.tg_id,
+            )
+
+        return None
+
+    async def get_client_data(
+        self,
+        user: User,
+        raise_on_error: bool = False,
+        inbound_cache: InboundCache | None = None,
+    ) -> ClientData | None:
+        try:
+            client_data = await self._get_client_data(
+                user=user,
+                raise_on_error=raise_on_error,
+                inbound_cache=inbound_cache,
+            )
+        except Exception as exception:
+            await self._mark_subscription_sync_failed(user=user, exception=exception)
+            raise
+
+        if getattr(user, "server_id", None) and client_data is not None:
+            await self._persist_subscription_snapshot(
+                user=user,
+                client_data=client_data,
+                status=SUBSCRIPTION_SYNC_STATUS_OK,
+            )
+
+        return client_data
 
     def get_upstream_key_for_server(self, user: User, server: Server | None) -> str | None:
         if not server:
@@ -254,12 +464,30 @@ class VPNService:
         if not user:
             return []
 
-        connections = await self._get_profile_connections_for_user(user)
+        get_profile_servers = getattr(self.server_pool_service, "get_profile_servers", None)
+        servers: list[Server] = await get_profile_servers() if get_profile_servers else []
+
+        if (
+            user.server_id
+            and user.server
+            and all(server.id != user.server_id for server in servers)
+        ):
+            servers = [*servers, user.server]
+
+        if not servers:
+            connections = await self._get_profile_connections_for_user(user)
+            servers = [connection.server for connection in connections]
+
         sources = []
-        for connection in connections:
-            key = self.get_upstream_key_for_server(user=user, server=connection.server)
+        seen_server_ids: set[int | None] = set()
+        for server in servers:
+            server_id = getattr(server, "id", None)
+            if server_id in seen_server_ids:
+                continue
+            seen_server_ids.add(server_id)
+            key = self.get_upstream_key_for_server(user=user, server=server)
             if key:
-                sources.append(UpstreamProfileSource(server=connection.server, url=key))
+                sources.append(UpstreamProfileSource(server=server, url=key))
 
         return sources
 
@@ -276,7 +504,12 @@ class VPNService:
             logger.debug(f"Server for user {user.tg_id} not found.")
             return None
 
-        logger.debug(f"Fetched key for {user.tg_id}: {key}.")
+        logger.debug(
+            "Fetched upstream key for user %s on server %s (vpn_id=%s).",
+            user.tg_id,
+            getattr(user.server, "name", "?") if user.server else "?",
+            _redact_identifier(user.vpn_id),
+        )
         return key
 
     async def switch_server(self, user: User, server_id: int) -> ServerSwitchResult:
@@ -292,7 +525,7 @@ class VPNService:
             return ServerSwitchResult(success=False, reason="unavailable")
 
         try:
-            client = await connection.api.client.get_by_email(str(user.tg_id))
+            client = await self.xui_gateway.get_client_by_email(connection, str(user.tg_id))
         except Exception as exception:
             logger.error(
                 "Failed to check client %s on server %s: %s",
@@ -338,8 +571,15 @@ class VPNService:
             logger.debug(f"Server ID for user {user.tg_id} not found.")
             return None
 
-        key = f"{self.config.bot.DOMAIN}/sub/{user.vpn_id}"
-        logger.debug(f"Fetched public key for {user.tg_id}: {key}.")
+        domain = self.config.bot.DOMAIN.rstrip("/")
+        if not domain.startswith(("http://", "https://")):
+            domain = f"https://{domain}"
+        key = f"{domain}/sub/{user.vpn_id}"
+        logger.debug(
+            "Fetched public subscription URL for user %s (vpn_id=%s).",
+            user.tg_id,
+            _redact_identifier(user.vpn_id),
+        )
         return key
 
     async def _remaining_duration_days(self, user: User) -> int:
@@ -374,7 +614,17 @@ class VPNService:
         flow: str | None = None,
         total_gb: int = 0,
     ) -> bool:
-        inbound = await self.server_pool_service.get_inbound(connection.api)
+        try:
+            inbounds = await self.xui_gateway.get_inbound_list(connection)
+        except Exception as exception:
+            logger.error(
+                "Failed to fetch inbound for server %s before creating client %s: %s",
+                connection.server.name,
+                user.tg_id,
+                exception,
+            )
+            return False
+        inbound = inbounds[0] if inbounds else None
         if not inbound:
             return False
 
@@ -393,7 +643,11 @@ class VPNService:
         )
 
         try:
-            await connection.api.client.add(inbound_id=inbound.id, clients=[new_client])
+            await self.xui_gateway.add_client(
+                connection,
+                inbound_id=inbound.id,
+                clients=[new_client],
+            )
             logger.info(
                 "Successfully created client %s on server %s.",
                 user.tg_id,
@@ -453,7 +707,11 @@ class VPNService:
         client.total_gb = total_gb
 
         try:
-            await connection.api.client.update(client_uuid=client.id, client=client)
+            await self.xui_gateway.update_client(
+                connection,
+                client_uuid=client.id,
+                client=client,
+            )
             logger.info(
                 "Client %s updated successfully on server %s.",
                 user.tg_id,
@@ -489,7 +747,10 @@ class VPNService:
         results: dict[int, bool] = {}
         for connection in connections:
             try:
-                existing_client = await connection.api.client.get_by_email(str(user.tg_id))
+                existing_client = await self.xui_gateway.get_client_by_email(
+                    connection,
+                    str(user.tg_id),
+                )
             except Exception as exception:
                 if self._is_client_not_found_error(exception):
                     existing_client = None
@@ -529,7 +790,10 @@ class VPNService:
             )
 
         required_result = results.get(user.server_id)
-        return required_result if required_result is not None else any(results.values())
+        success = required_result if required_result is not None else any(results.values())
+        if success:
+            await self.refresh_subscription_snapshot(user)
+        return success
 
     async def update_client(
         self,
@@ -562,7 +826,10 @@ class VPNService:
         results: dict[int, bool] = {}
         for connection in connections:
             try:
-                client = await connection.api.client.get_by_email(str(user.tg_id))
+                client = await self.xui_gateway.get_client_by_email(
+                    connection,
+                    str(user.tg_id),
+                )
             except Exception as exception:
                 if self._is_client_not_found_error(exception):
                     client = None
@@ -611,7 +878,10 @@ class VPNService:
             )
 
         required_result = results.get(user.server_id)
-        return required_result if required_result is not None else any(results.values())
+        success = required_result if required_result is not None else any(results.values())
+        if success:
+            await self.refresh_subscription_snapshot(user)
+        return success
 
     async def create_subscription(self, user: User, devices: int, duration: int) -> bool:
         if await self.is_client_exists(user):
@@ -652,14 +922,19 @@ class VPNService:
             return False
 
         try:
-            client = await connection.api.client.get_by_email(str(user.tg_id))
+            client = await self.xui_gateway.get_client_by_email(connection, str(user.tg_id))
             if client is None:
                 logger.warning("Cannot set enabled=%s for user %s: client not found.", enabled, user.tg_id)
                 return False
 
             client.enable = enabled
-            await connection.api.client.update(client_uuid=client.id, client=client)
+            await self.xui_gateway.update_client(
+                connection,
+                client_uuid=client.id,
+                client=client,
+            )
             logger.info("Client %s enabled set to %s.", user.tg_id, enabled)
+            await self.refresh_subscription_snapshot(user)
             return True
         except Exception as exception:
             logger.error("Failed to set client %s enabled=%s: %s", user.tg_id, enabled, exception)

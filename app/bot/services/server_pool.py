@@ -5,6 +5,7 @@ from py3xui import AsyncApi, Inbound
 from sqlalchemy.ext.asyncio import async_sessionmaker
 
 from app.config import Config
+from app.bot.utils.network import ping_url
 from app.db.models import Server, User
 
 logger = logging.getLogger(__name__)
@@ -21,6 +22,13 @@ PROFILE_SERVER_LOCATION_ORDER = {
 class Connection:
     server: Server
     api: AsyncApi
+
+
+@dataclass(frozen=True)
+class ServerHealthcheckResult:
+    server_name: str
+    online: bool
+    latency_ms: float | None
 
 
 def _profile_server_order(server: Server) -> int:
@@ -53,16 +61,33 @@ class ServerPoolService:
         self._servers: dict[int, Connection] = {}
         logger.info("Server Pool Service initialized.")
 
+    @staticmethod
+    def _configure_api(api: AsyncApi) -> None:
+        # py3xui retries each HTTP request internally. Keeping this low prevents a
+        # slow panel from tying up bot resources across full-user background scans.
+        for api_part in (
+            getattr(api, "client", None),
+            getattr(api, "inbound", None),
+            getattr(api, "database", None),
+            getattr(api, "server", None),
+        ):
+            if api_part is None or not hasattr(api_part, "max_retries"):
+                continue
+            api_part.max_retries = 1
+
     async def _add_server(self, server: Server) -> None:
         if server.id not in self._servers:
+            xui_logger = logging.getLogger(f"xui_{server.name}")
+            xui_logger.setLevel(logging.WARNING)
             api = AsyncApi(
                 host=server.host,
                 username=self.config.xui.USERNAME,
                 password=self.config.xui.PASSWORD,
                 token=self.config.xui.TOKEN,
                 # use_tls_verify=False,
-                logger=logging.getLogger(f"xui_{server.name}"),
+                logger=xui_logger,
             )
+            self._configure_api(api)
             try:
                 await api.login()
                 server.online = True
@@ -135,7 +160,7 @@ class ServerPoolService:
 
         if not connection:
             available_servers = list(self._servers.keys())
-            logger.critical(
+            logger.warning(
                 f"Server {user.server_id} not found in pool. "
                 f"User assigned server: {user.server_id}, "
                 f"Available servers in pool: {available_servers}"
@@ -146,7 +171,15 @@ class ServerPoolService:
 
             if server:
                 logger.debug(f"Server {server.name} ({server.host}) found in database.")
-                # TODO: Try to add server to pool
+                logger.info(
+                    "Attempting to restore server %s (%s) connection.",
+                    server.name,
+                    server.host,
+                )
+                await self._add_server(server)
+                restored_connection = self._servers.get(user.server_id)
+                if restored_connection:
+                    return restored_connection
             else:
                 logger.error(f"Server {user.server_id} not found in database.")
 
@@ -225,6 +258,22 @@ class ServerPoolService:
             key=_profile_server_sort_key,
         )
 
+    async def get_profile_servers(self) -> list[Server]:
+        """Profile servers for building subscription source URLs.
+
+        Reads the database only: serving /sub must not depend on panel logins,
+        otherwise a panel hiccup removes the node from every client's profile
+        and drops active connections.
+        """
+        async with self.session() as session:
+            db_servers = await Server.get_all(session)
+
+        profile_servers = [server for server in db_servers if _is_profile_server(server)]
+        if not profile_servers:
+            profile_servers = [server for server in db_servers if server.online]
+
+        return sorted(profile_servers, key=_profile_server_sort_key)
+
     async def get_profile_connections(self) -> list[Connection]:
         async with self.session() as session:
             db_servers = await Server.get_all(session)
@@ -257,3 +306,25 @@ class ServerPoolService:
             profile_connections or connections,
             key=lambda connection: _profile_server_sort_key(connection.server),
         )
+
+    async def healthcheck_servers(self) -> list[ServerHealthcheckResult]:
+        async with self.session() as session:
+            servers = await Server.get_all(session)
+
+        results: list[ServerHealthcheckResult] = []
+        for server in servers:
+            latency_ms = await ping_url(server.host)
+            online = latency_ms is not None
+            async with self.session() as session:
+                await Server.update(session=session, name=server.name, online=online)
+            if server.id in self._servers:
+                self._servers[server.id].server.online = online
+            results.append(
+                ServerHealthcheckResult(
+                    server_name=server.name,
+                    online=online,
+                    latency_ms=latency_ms,
+                )
+            )
+
+        return results

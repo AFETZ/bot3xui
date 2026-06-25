@@ -65,6 +65,15 @@ def make_request(vpn_id="vpn-1", headers=None):
     )
 
 
+def make_raw_request(vpn_id="vpn-1", headers=None):
+    return make_mocked_request(
+        "GET",
+        f"/sub/{vpn_id}?format=raw&client=happ",
+        match_info={"vpn_id": vpn_id},
+        headers=headers or {"User-Agent": "Happ"},
+    )
+
+
 @pytest.mark.asyncio
 async def test_proxy_returns_403_for_unknown_user():
     service = SimpleNamespace(
@@ -232,7 +241,7 @@ async def test_proxy_overrides_profile_title_with_selected_server(monkeypatch):
 
     response = await proxy.handle(make_request("vpn-allowed"))
 
-    assert response.headers["profile-title"] == "AFZVPN Kazakhstan"
+    assert response.headers["profile-title"] == "AFETZ VPN Kazakhstan"
 
 
 @pytest.mark.asyncio
@@ -257,7 +266,7 @@ async def test_proxy_uses_selected_server_name_when_location_is_unknown(monkeypa
 
     response = await proxy.handle(make_request("vpn-allowed"))
 
-    assert response.headers["profile-title"] == "AFZVPN Finland"
+    assert response.headers["profile-title"] == "AFETZ VPN Finland"
 
 
 @pytest.mark.asyncio
@@ -302,14 +311,16 @@ async def test_proxy_aggregates_profile_sources_for_happ_switching(monkeypatch):
     response = await proxy.handle(make_request("vpn-allowed"))
 
     assert response.status == 200
-    assert response.headers["profile-title"] == "AFZVPN"
+    assert response.headers["profile-title"] == "AFETZ VPN"
     assert response.headers["subscription-auto-update-enable"] == "1"
     assert response.headers["subscription-ping-onopen-enabled"] == "1"
+    assert response.headers["no-limit-xhttp-enabled"] == "1"
+    assert response.headers["ping-type"] == "proxy"
     assert (
         response.body
         == (
-            b"vless://user@kz.example:443?security=reality#AFZVPN%20Kazakhstan\n"
-            b"vless://user@fi.example:443?security=reality#AFZVPN%20Finland\n"
+            b"vless://user@kz.example:443?security=reality#%5BOK%5D%20AFETZ%20VPN%20Kazakhstan\n"
+            b"vless://user@fi.example:443?security=reality#%5BOK%5D%20AFETZ%20VPN%20Finland\n"
         )
     )
 
@@ -327,10 +338,261 @@ async def test_proxy_falls_back_to_text_plain_when_upstream_missing_content_type
     monkeypatch.setattr(
         "app.web.primary_profile.aiohttp.ClientSession",
         lambda **kwargs: FakeClientSession(
-            response=FakeUpstreamResponse(body=b"data", headers={})
+            response=FakeUpstreamResponse(body=b"vless://abc\n", headers={})
         ),
     )
 
     response = await proxy.handle(make_request("vpn-allowed"))
 
     assert response.headers["content-type"] == "text/plain; charset=utf-8"
+
+
+@pytest.mark.asyncio
+async def test_proxy_rejects_html_or_non_profile_upstream(monkeypatch):
+    user = SimpleNamespace(tg_id=1)
+    status = SimpleNamespace(status_check_ok=True, is_active=True)
+    service = SimpleNamespace(
+        get_subscription_status_by_vpn_id=AsyncMock(return_value=(user, status)),
+        get_upstream_profile_url=AsyncMock(return_value="https://xui.example/sub/vpn-1"),
+    )
+    proxy = PrimaryProfileProxy(subscription_service=service)
+
+    monkeypatch.setattr(
+        "app.web.primary_profile.aiohttp.ClientSession",
+        lambda **kwargs: FakeClientSession(
+            response=FakeUpstreamResponse(
+                body=b"<html>auth failed</html>",
+                headers={"Content-Type": "text/html; charset=utf-8"},
+            )
+        ),
+    )
+
+    with pytest.raises(web.HTTPBadGateway):
+        await proxy.handle(make_request("vpn-allowed"))
+
+
+@pytest.mark.asyncio
+async def test_proxy_raw_format_returns_first_supported_node(monkeypatch):
+    user = SimpleNamespace(tg_id=1)
+    status = SimpleNamespace(status_check_ok=True, is_active=True)
+    service = SimpleNamespace(
+        get_subscription_status_by_vpn_id=AsyncMock(return_value=(user, status)),
+        get_upstream_profile_url=AsyncMock(return_value="https://xui.example/sub/vpn-1"),
+    )
+    proxy = PrimaryProfileProxy(subscription_service=service)
+
+    monkeypatch.setattr(
+        "app.web.primary_profile.aiohttp.ClientSession",
+        lambda **kwargs: FakeClientSession(
+            response=FakeUpstreamResponse(
+                body=b"# comment\nvless://first\nvless://second\n",
+                headers={"Content-Type": "text/plain; charset=utf-8"},
+            )
+        ),
+    )
+
+    response = await proxy.handle(make_raw_request("vpn-allowed"))
+
+    assert response.body == b"vless://first\n"
+    assert response.headers["content-type"] == "text/plain; charset=utf-8"
+    assert response.headers["profile-title"] == "AFETZ VPN Raw"
+
+
+class SequenceFakeClientSession:
+    """Returns queued responses per URL; raises queued exceptions."""
+
+    def __init__(self, responses_by_url, **kwargs):
+        self.responses_by_url = responses_by_url
+
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, exc_type, exc, tb):
+        return False
+
+    def get(self, url, **kwargs):
+        queue = self.responses_by_url[url]
+        item = queue.pop(0) if len(queue) > 1 else queue[0]
+        if isinstance(item, Exception):
+            raise item
+        return item
+
+
+def _aggregated_service(user, status, sources):
+    return SimpleNamespace(
+        get_subscription_status_by_vpn_id=AsyncMock(return_value=(user, status)),
+        get_upstream_profile_sources=AsyncMock(return_value=sources),
+        get_cabinet_url=lambda user: f"https://bot.example/cabinet/{user.vpn_id}",
+    )
+
+
+def _reality_line(host, sid, spx, fragment):
+    return (
+        f"vless://uuid@{host}:443?security=reality&pbk=PBK&sid={sid}&spx={spx}"
+        f"#{fragment}\n"
+    ).encode()
+
+
+@pytest.mark.asyncio
+async def test_proxy_body_is_byte_stable_when_upstream_randomizes_params(monkeypatch):
+    user = SimpleNamespace(tg_id=1, vpn_id="vpn-stable")
+    status = SimpleNamespace(status_check_ok=True, is_active=True)
+    sources = [
+        SimpleNamespace(
+            server=SimpleNamespace(id=1, name="Kazakhstan", location="KZ"),
+            url="https://kz.example/sub/vpn-stable",
+        ),
+        SimpleNamespace(
+            server=SimpleNamespace(id=3, name="Finland", location="FI"),
+            url="https://fi.example/sub/vpn-stable",
+        ),
+    ]
+    proxy = PrimaryProfileProxy(subscription_service=_aggregated_service(user, status, sources))
+
+    responses = {
+        "https://kz.example/sub/vpn-stable": [
+            FakeUpstreamResponse(body=_reality_line("kz.example", "aaa111", "%2Fone", "kz-old")),
+            FakeUpstreamResponse(body=_reality_line("kz.example", "bbb222", "%2Ftwo", "kz-new")),
+        ],
+        "https://fi.example/sub/vpn-stable": [
+            FakeUpstreamResponse(body=_reality_line("fi.example", "ccc333", "%2Fthree", "fi-old")),
+            FakeUpstreamResponse(body=_reality_line("fi.example", "ddd444", "%2Ffour", "fi-new")),
+        ],
+    }
+    monkeypatch.setattr(
+        "app.web.primary_profile.aiohttp.ClientSession",
+        lambda **kwargs: SequenceFakeClientSession(responses),
+    )
+
+    first = await proxy.handle(make_request("vpn-stable"))
+    second = await proxy.handle(make_request("vpn-stable"))
+
+    assert first.status == 200
+    assert second.body == first.body
+    assert b"sid=aaa111" in second.body
+    assert b"sid=ccc333" in second.body
+
+
+@pytest.mark.asyncio
+async def test_proxy_serves_cached_nodes_when_source_fetch_fails(monkeypatch):
+    user = SimpleNamespace(tg_id=1, vpn_id="vpn-cache")
+    status = SimpleNamespace(status_check_ok=True, is_active=True)
+    sources = [
+        SimpleNamespace(
+            server=SimpleNamespace(id=1, name="Kazakhstan", location="KZ"),
+            url="https://kz.example/sub/vpn-cache",
+        ),
+        SimpleNamespace(
+            server=SimpleNamespace(id=3, name="Finland", location="FI"),
+            url="https://fi.example/sub/vpn-cache",
+        ),
+    ]
+    proxy = PrimaryProfileProxy(subscription_service=_aggregated_service(user, status, sources))
+
+    responses = {
+        "https://kz.example/sub/vpn-cache": [
+            FakeUpstreamResponse(body=_reality_line("kz.example", "kz1", "%2Fa", "kz")),
+        ],
+        "https://fi.example/sub/vpn-cache": [
+            FakeUpstreamResponse(body=_reality_line("fi.example", "fi1", "%2Fb", "fi")),
+            ClientError("fi panel down"),
+        ],
+    }
+    monkeypatch.setattr(
+        "app.web.primary_profile.aiohttp.ClientSession",
+        lambda **kwargs: SequenceFakeClientSession(responses),
+    )
+
+    first = await proxy.handle(make_request("vpn-cache"))
+    second = await proxy.handle(make_request("vpn-cache"))
+
+    assert second.status == 200
+    assert b"fi.example" in second.body
+    assert second.body == first.body
+
+
+@pytest.mark.asyncio
+async def test_proxy_returns_503_instead_of_wiping_recently_active_user(monkeypatch):
+    user = SimpleNamespace(tg_id=1, vpn_id="vpn-guard", server_id=3)
+    active_status = SimpleNamespace(status_check_ok=True, is_active=True)
+    sources = [
+        SimpleNamespace(
+            server=SimpleNamespace(id=3, name="Finland", location="FI"),
+            url="https://fi.example/sub/vpn-guard",
+        ),
+    ]
+    service = _aggregated_service(user, active_status, sources)
+    proxy = PrimaryProfileProxy(subscription_service=service)
+
+    responses = {
+        "https://fi.example/sub/vpn-guard": [
+            FakeUpstreamResponse(body=_reality_line("fi.example", "fi1", "%2Fb", "fi")),
+        ],
+    }
+    monkeypatch.setattr(
+        "app.web.primary_profile.aiohttp.ClientSession",
+        lambda **kwargs: SequenceFakeClientSession(responses),
+    )
+
+    first = await proxy.handle(make_request("vpn-guard"))
+    assert first.status == 200
+
+    transient_status = SimpleNamespace(
+        status_check_ok=True, is_active=False, client_data=None
+    )
+    service.get_subscription_status_by_vpn_id = AsyncMock(
+        return_value=(user, transient_status)
+    )
+
+    with pytest.raises(web.HTTPServiceUnavailable):
+        await proxy.handle(make_request("vpn-guard"))
+
+    expired_status = SimpleNamespace(
+        status_check_ok=True, is_active=False, client_data=object()
+    )
+    service.get_subscription_status_by_vpn_id = AsyncMock(
+        return_value=(user, expired_status)
+    )
+
+    response = await proxy.handle(make_request("vpn-guard"))
+    assert b"Subscription expired" in response.body
+
+
+@pytest.mark.asyncio
+async def test_proxy_rewrites_xhttp_auto_mode_to_stream_up(monkeypatch):
+    user = SimpleNamespace(tg_id=1, vpn_id="vpn-xhttp")
+    status = SimpleNamespace(status_check_ok=True, is_active=True)
+    sources = [
+        SimpleNamespace(
+            server=SimpleNamespace(id=1, name="Kazakhstan", location="KZ"),
+            url="https://kz.example/sub/vpn-xhttp",
+        ),
+    ]
+    proxy = PrimaryProfileProxy(subscription_service=_aggregated_service(user, status, sources))
+
+    line = (
+        b"vless://uuid@kz.example:443?encryption=none&security=reality&pbk=PBK"
+        b"&sid=aaa111&spx=%2Fone&type=xhttp&mode=auto&path=%2F#kz\n"
+    )
+    line2 = (
+        b"vless://uuid@kz.example:443?encryption=none&security=reality&pbk=PBK"
+        b"&sid=bbb222&spx=%2Ftwo&type=xhttp&mode=auto&path=%2F#kz\n"
+    )
+    responses = {
+        "https://kz.example/sub/vpn-xhttp": [
+            FakeUpstreamResponse(body=line),
+            FakeUpstreamResponse(body=line2),
+        ],
+    }
+    monkeypatch.setattr(
+        "app.web.primary_profile.aiohttp.ClientSession",
+        lambda **kwargs: SequenceFakeClientSession(responses),
+    )
+
+    first = await proxy.handle(make_request("vpn-xhttp"))
+    second = await proxy.handle(make_request("vpn-xhttp"))
+
+    assert b"mode=stream-up" in first.body
+    assert b"mode=auto" not in first.body
+    assert b"type=xhttp" in first.body
+    assert second.body == first.body

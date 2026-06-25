@@ -2,7 +2,7 @@ import logging
 from datetime import datetime
 from typing import Any, Optional, Self
 
-from sqlalchemy import ForeignKey, String, func, select, update
+from sqlalchemy import BigInteger, ForeignKey, String, func, select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import Mapped, mapped_column, relationship, selectinload
@@ -43,9 +43,31 @@ class User(Base):
     )
     first_name: Mapped[str] = mapped_column(String(length=32), nullable=False)
     username: Mapped[str | None] = mapped_column(String(length=32), nullable=True)
+    web_login: Mapped[str | None] = mapped_column(
+        String(length=128),
+        unique=True,
+        nullable=True,
+    )
+    web_password_hash: Mapped[str | None] = mapped_column(
+        String(length=255),
+        nullable=True,
+    )
     current_plan_code: Mapped[str | None] = mapped_column(String(length=32), nullable=True)
     current_period_started_at: Mapped[datetime | None] = mapped_column(nullable=True)
     current_period_duration_days: Mapped[int | None] = mapped_column(nullable=True)
+    pending_plan_code: Mapped[str | None] = mapped_column(String(length=32), nullable=True)
+    pending_period_duration_days: Mapped[int | None] = mapped_column(nullable=True)
+    pending_plan_starts_at: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    subscription_max_devices: Mapped[int | None] = mapped_column(nullable=True)
+    subscription_traffic_total: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    subscription_traffic_remaining: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    subscription_traffic_used: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    subscription_traffic_up: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    subscription_traffic_down: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    subscription_expiry_time: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    subscription_enabled: Mapped[bool | None] = mapped_column(nullable=True)
+    subscription_last_synced_at: Mapped[datetime | None] = mapped_column(nullable=True)
+    subscription_sync_status: Mapped[str | None] = mapped_column(String(length=32), nullable=True)
     is_blocked: Mapped[bool] = mapped_column(default=False, server_default="0", nullable=False)
     personal_discount_percent: Mapped[int] = mapped_column(
         default=0,
@@ -84,7 +106,8 @@ class User(Base):
         return (
             f"<User(id={self.id}, tg_id={self.tg_id}, vpn_id='{self.vpn_id}', "
             f"server_id={self.server_id}, first_name='{self.first_name}', "
-            f"username='{self.username}', current_plan_code='{self.current_plan_code}', "
+            f"username='{self.username}', web_login='{self.web_login}', "
+            f"current_plan_code='{self.current_plan_code}', "
             f"is_blocked={self.is_blocked}, "
             f"personal_discount_percent={self.personal_discount_percent}, "
             f"language_code='{self.language_code}', created_at={self.created_at}, "
@@ -136,6 +159,27 @@ class User(Base):
             return user
 
         logger.debug("User with vpn_id %s not found in the database.", vpn_id)
+        return None
+
+    @classmethod
+    async def get_by_web_login(cls, session: AsyncSession, web_login: str) -> Self | None:
+        filter = [User.web_login == web_login]
+        query = await session.execute(
+            select(User)
+            .options(
+                selectinload(User.transactions),
+                selectinload(User.activated_promocodes),
+                selectinload(User.server),
+            )
+            .where(*filter)
+        )
+        user = query.scalar_one_or_none()
+
+        if user:
+            logger.debug("User with web_login %s retrieved from the database.", web_login)
+            return user
+
+        logger.debug("User with web_login %s not found in the database.", web_login)
         return None
 
     @classmethod

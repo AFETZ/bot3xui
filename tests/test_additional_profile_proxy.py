@@ -6,8 +6,11 @@ from aiohttp import ClientError, web
 from aiohttp.test_utils import make_mocked_request
 
 from app.web.additional_profile import (
+    ADDITIONAL_PROFILE_TITLE,
     ADDITIONAL_PROFILE_MIRROR_URLS,
     AdditionalProfileProxy,
+    FILTERED_ADDITIONAL_PROFILE_MIRROR_URLS,
+    FILTERED_ADDITIONAL_PROFILE_TITLE,
 )
 
 
@@ -53,8 +56,12 @@ class FakeClientSession:
         return response
 
 
-def make_request(vpn_id="vpn-1"):
-    return make_mocked_request("GET", f"/wl/{vpn_id}", match_info={"vpn_id": vpn_id})
+def make_request(vpn_id="vpn-1", path_prefix="/wl"):
+    return make_mocked_request(
+        "GET",
+        f"{path_prefix}/{vpn_id}",
+        match_info={"vpn_id": vpn_id},
+    )
 
 
 def make_active_service():
@@ -140,17 +147,18 @@ async def test_proxy_falls_back_from_first_mirror_to_second(monkeypatch):
     assert response.content_type == "text/plain"
     assert response.charset == "utf-8"
     assert response.headers["Cache-Control"] == "no-store, no-cache, must-revalidate"
-    assert response.headers["profile-title"] == "AFZVPN Universal WL"
+    assert response.headers["profile-title"] == ADDITIONAL_PROFILE_TITLE
     assert response.headers["profile-update-interval"] == "1"
     assert response.headers["subscription-auto-update-enable"] == "1"
     assert response.headers["subscription-ping-onopen-enabled"] == "1"
-    assert response.headers["ping-type"] == "proxy-head"
+    assert response.headers["ping-type"] == "proxy"
+    assert response.headers["no-limit-xhttp-enabled"] == "1"
     assert response.headers["check-url-via-proxy"] == "https://cp.cloudflare.com/generate_204"
     assert "subscription-autoconnect" not in response.headers
     assert "subscription-autoconnect-type" not in response.headers
     assert response.headers["X-Profile-Source"] == ADDITIONAL_PROFILE_MIRROR_URLS[1]
     assert response.headers["X-Profile-Stale"] == "0"
-    assert [url for url, _ in calls] == list(ADDITIONAL_PROFILE_MIRROR_URLS[:2])
+    assert [url for url, _ in calls] == list(ADDITIONAL_PROFILE_MIRROR_URLS[:3])
     assert calls[0][1]["timeout"].total == 5
 
 
@@ -163,6 +171,45 @@ def test_proxy_mirror_order_keeps_experimental_sources_last():
     assert ADDITIONAL_PROFILE_MIRROR_URLS[3:] == (
         "https://hub.mos.ru/zieng2/wl/raw/main/list_universal.txt",
         "https://gitverse.ru/api/repos/zieng2/wl/raw/branch/master/list_universal.txt",
+    )
+
+
+@pytest.mark.asyncio
+async def test_filtered_proxy_uses_igareck_sources_and_title(monkeypatch):
+    calls = []
+    service = make_active_service()
+    proxy = AdditionalProfileProxy(
+        subscription_service=service,
+        mirror_urls=FILTERED_ADDITIONAL_PROFILE_MIRROR_URLS,
+        profile_title=FILTERED_ADDITIONAL_PROFILE_TITLE,
+        profile_label="filtered additional profile",
+    )
+
+    monkeypatch.setattr(
+        "app.web.additional_profile.aiohttp.ClientSession",
+        lambda **kwargs: FakeClientSession(
+            calls=calls,
+            responses=[FakeUpstreamResponse(text=PROFILE_TEXT)],
+        ),
+    )
+
+    response = await proxy.handle(make_request("vpn-allowed", path_prefix="/wl-filtered"))
+
+    assert response.status == 200
+    assert response.text == PROFILE_TEXT
+    assert response.headers["profile-title"] == FILTERED_ADDITIONAL_PROFILE_TITLE
+    assert response.headers["X-Profile-Source"] == FILTERED_ADDITIONAL_PROFILE_MIRROR_URLS[0]
+    assert [url for url, _ in calls] == list(FILTERED_ADDITIONAL_PROFILE_MIRROR_URLS[:3])
+
+
+def test_filtered_profile_mirror_order_prefers_light_mobile_subscription():
+    assert FILTERED_ADDITIONAL_PROFILE_MIRROR_URLS[0] == (
+        "https://raw.githack.com/igareck/vpn-configs-for-russia/main/"
+        "Vless-Reality-White-Lists-Rus-Mobile.txt"
+    )
+    assert all(
+        url.endswith("/Vless-Reality-White-Lists-Rus-Mobile.txt")
+        for url in FILTERED_ADDITIONAL_PROFILE_MIRROR_URLS
     )
 
 

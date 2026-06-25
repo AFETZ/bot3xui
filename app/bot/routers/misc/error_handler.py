@@ -27,7 +27,7 @@ async def errors_handler(event: ErrorEvent, config: Config, services: ServicesCo
             logger.warning(f"User {user_id} bad request for edit/send message.")
             try:
                 await event.update.callback_query.answer(
-                    text="⚠️ Нажмите кнопку «📋 Меню» внизу чата",
+                    text="⚠️ Откройте главное меню командой /start",
                     show_alert=True,
                 )
             except Exception:

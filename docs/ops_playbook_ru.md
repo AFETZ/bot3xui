@@ -60,7 +60,7 @@
    - `YOOMONEY_WALLET_ID`
    - `YOOMONEY_NOTIFICATION_SECRET`
 2. В кабинете YooMoney настроить HTTP-уведомления:
-   - URL: `https://www.superbebra.uk:8443/yoomoney`
+   - URL: `<BOT_DOMAIN>/yoomoney`
 3. Перезапустить бота:
    - `docker compose up -d --build bot`
 
@@ -70,7 +70,7 @@
    - `CRYPTOMUS_API_KEY`
    - `CRYPTOMUS_MERCHANT_ID`
 2. Callback в заказе формируется ботом автоматически:
-   - `https://www.superbebra.uk:8443/cryptomus`
+   - `<BOT_DOMAIN>/cryptomus`
 3. Перезапустить бота:
    - `docker compose up -d --build bot`
 

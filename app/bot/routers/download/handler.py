@@ -55,38 +55,48 @@ async def redirect_to_connection(request: Request) -> Response:
 async def callback_download(callback: CallbackQuery, user: User, state: FSMContext) -> None:
     logger.info(f"User {user.tg_id} opened download apps page.")
 
-    main_message_id = await state.get_value(MAIN_MESSAGE_ID_KEY)
     previous_callback = await state.get_value(PREVIOUS_CALLBACK_KEY)
-
-    logger.debug("--------------------------------")
-    logger.debug(f"callback.message.message_id: {callback.message.message_id}")
-    logger.debug(f"main_message_id: {main_message_id}")
-    logger.debug(f"previous_callback: {previous_callback}")
-    logger.debug("--------------------------------")
-    if callback.message.message_id != main_message_id:
-        await state.update_data({PREVIOUS_CALLBACK_KEY: NavMain.MAIN_MENU})
+    if callback.data == NavMain.REDIRECT_TO_DOWNLOAD or not previous_callback:
         previous_callback = NavMain.MAIN_MENU
-        await callback.bot.edit_message_text(
+
+    message = callback.message
+    if message is None:
+        await callback.answer()
+        return
+
+    await state.update_data({
+        MAIN_MESSAGE_ID_KEY: message.message_id,
+        PREVIOUS_CALLBACK_KEY: previous_callback,
+    })
+
+    try:
+        await message.edit_text(
             text=_("download:message:choose_platform"),
+            reply_markup=platforms_keyboard(previous_callback),
+        )
+    except Exception as exception:
+        logger.warning(
+            "Failed to edit download message for user %s: %s. Sending a new one.",
+            user.tg_id,
+            exception,
+        )
+        sent_message = await callback.bot.send_message(
             chat_id=user.tg_id,
-            message_id=main_message_id,
-            reply_markup=platforms_keyboard(previous_callback),
-        )
-    else:
-        await callback.message.edit_text(
             text=_("download:message:choose_platform"),
             reply_markup=platforms_keyboard(previous_callback),
         )
+        await state.update_data({MAIN_MESSAGE_ID_KEY: sent_message.message_id})
 
 
-@router.callback_query(F.data.startswith(NavDownload.PLATFORM))
-async def callback_platform(
+async def _show_platform_download(
+    *,
     callback: CallbackQuery,
     user: User,
     services: ServicesContainer,
     config: Config,
+    platform_nav: NavDownload | str,
 ) -> None:
-    logger.info(f"User {user.tg_id} selected platform: {callback.data}")
+    logger.info("User %s selected platform: %s", user.tg_id, platform_nav)
     key = await services.vpn.get_key(user)
     status = await services.subscription.get_subscription_status(user)
     additional_profile_key = (
@@ -94,8 +104,13 @@ async def callback_platform(
         if status.status_check_ok and status.has_additional_profile
         else None
     )
+    filtered_additional_profile_key = (
+        services.subscription.get_filtered_additional_profile_url(user)
+        if status.status_check_ok and status.has_additional_profile
+        else None
+    )
 
-    match callback.data:
+    match platform_nav:
         case NavDownload.PLATFORM_IOS:
             platform = _("download:message:platform_ios")
         case NavDownload.PLATFORM_ANDROID:
@@ -106,9 +121,43 @@ async def callback_platform(
     await callback.message.edit_text(
         text=_("download:message:connect_to_vpn").format(platform=platform),
         reply_markup=download_keyboard(
-            platform=callback.data,
+            platform=platform_nav,
             key=key,
             url=config.bot.DOMAIN,
             additional_profile_key=additional_profile_key,
+            filtered_additional_profile_key=filtered_additional_profile_key,
         ),
+    )
+
+
+@router.callback_query(F.data.startswith(NavDownload.PLATFORM))
+async def callback_platform(
+    callback: CallbackQuery,
+    user: User,
+    services: ServicesContainer,
+    config: Config,
+) -> None:
+    await _show_platform_download(
+        callback=callback,
+        user=user,
+        services=services,
+        config=config,
+        platform_nav=callback.data,
+    )
+
+
+@router.callback_query(F.data.startswith(NavDownload.CLIENT))
+async def callback_android_client(
+    callback: CallbackQuery,
+    user: User,
+    services: ServicesContainer,
+    config: Config,
+) -> None:
+    logger.info("User %s clicked legacy Android client button: %s", user.tg_id, callback.data)
+    await _show_platform_download(
+        callback=callback,
+        user=user,
+        services=services,
+        config=config,
+        platform_nav=NavDownload.PLATFORM_ANDROID,
     )

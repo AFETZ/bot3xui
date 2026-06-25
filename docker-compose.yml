@@ -1,3 +1,9 @@
+x-logging: &default-logging
+  driver: "json-file"
+  options:
+    max-size: "10m"
+    max-file: "1"
+
 services:
   traefik:
     image: "traefik:latest"
@@ -26,6 +32,7 @@ services:
       - "--log.level=INFO"
     labels:
       - "traefik.enable=true"
+    logging: *default-logging
 
   redis:
     image: redis:latest
@@ -35,6 +42,7 @@ services:
       - "127.0.0.1:6380:6379"
     volumes:
       - ./.local/redis-data:/data
+    logging: *default-logging
 
   bot:
     build: .
@@ -53,6 +61,11 @@ services:
       - BOT_PROXY_URL=${BOT_PROXY_URL:-}
     stop_signal: SIGINT
     restart: unless-stopped
+    ulimits:
+      nofile:
+        soft: 65536
+        hard: 65536
+    logging: *default-logging
     command: sh -c " 
       poetry run pybabel compile -d /app/locales -D bot && 
       poetry run alembic -c /app/db/alembic.ini upgrade head && 

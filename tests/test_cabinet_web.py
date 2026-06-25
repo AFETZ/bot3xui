@@ -5,7 +5,14 @@ import pytest
 from app.bot.models.plan import Plan
 from app.bot.utils.constants import Currency
 from app.bot.utils.navigation import NavSubscription
-from app.web.cabinet import CabinetWeb
+from app.web.cabinet import (
+    CabinetWeb,
+    _extract_vpn_id,
+    _generate_web_tg_id,
+    _hash_password,
+    _normalize_login,
+    _verify_password,
+)
 
 
 class FakePlanService:
@@ -97,6 +104,35 @@ def test_cabinet_excludes_telegram_stars_from_web_gateways(cabinet):
     callbacks = [gateway.callback for gateway in cabinet._web_gateways()]
 
     assert callbacks == [NavSubscription.PAY_YOOKASSA]
+
+
+def test_extract_vpn_id_accepts_existing_subscription_links():
+    vpn_id = "4df8e0dd-4a59-45d8-b28e-9b3eaefba880"
+
+    assert _extract_vpn_id(f"https://example.test/sub/{vpn_id}") == vpn_id
+    assert _extract_vpn_id(f"https://example.test/cabinet/{vpn_id}") == vpn_id
+    assert _extract_vpn_id(f"https://example.test/wl/{vpn_id}") == vpn_id
+
+
+def test_extract_vpn_id_rejects_unknown_values():
+    assert _extract_vpn_id("https://example.test/cabinet/not-a-real-id") is None
+
+
+def test_generate_web_tg_id_uses_compact_negative_ids():
+    tg_id = _generate_web_tg_id()
+
+    assert -1_000_000_000 < tg_id <= -100_000_000
+
+
+def test_normalize_login_accepts_email_like_login():
+    assert _normalize_login(" Client+1@Example.COM ") == "client+1@example.com"
+
+
+def test_password_hash_verifies_only_matching_password():
+    password_hash = _hash_password("strong-password")
+
+    assert _verify_password("strong-password", password_hash) is True
+    assert _verify_password("wrong-password", password_hash) is False
 
 
 @pytest.mark.asyncio

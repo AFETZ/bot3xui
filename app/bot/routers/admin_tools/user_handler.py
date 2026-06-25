@@ -13,7 +13,7 @@ from app.bot.models import AdminUserDetails, AdminUserListItem, AdminUserListPag
 from app.bot.payment_gateways import GatewayFactory
 from app.bot.routers.misc.keyboard import back_keyboard
 from app.bot.utils.constants import MAIN_MESSAGE_ID_KEY, Currency
-from app.bot.utils.formatting import format_remaining_time
+from app.bot.utils.formatting import format_date, format_remaining_time, format_subscription_period
 from app.bot.utils.navigation import NavAdminTools
 from app.db.models import User
 
@@ -799,10 +799,25 @@ def _build_user_details_text(details: AdminUserDetails) -> str:
         "🟢 online" if details.server_online else "🔴 offline"
         if details.server_online is not None else "—"
     )
+    if details.pending_plan_code:
+        pending_start = (
+            format_date(details.pending_plan_starts_at)
+            if details.pending_plan_starts_at
+            else "после текущей подписки"
+        )
+        pending_duration = (
+            format_subscription_period(details.pending_period_duration_days)
+            if details.pending_period_duration_days
+            else "—"
+        )
+        pending_text = f"{details.pending_plan_code}, {pending_duration}, старт: {pending_start}"
+    else:
+        pending_text = "—"
     extra_lines = [
         "",
         f"<b>Блокировка:</b> {block_text}",
         f"<b>Персональная скидка:</b> {details.personal_discount_percent}%",
+        f"<b>Запланированный тариф:</b> {escape(pending_text)}",
         f"<b>Server host:</b> <code>{escape(details.server_host or '—')}</code>",
         f"<b>Server status:</b> {server_status}",
         "",

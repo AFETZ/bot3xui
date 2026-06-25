@@ -14,7 +14,6 @@ APP_HAPP_ROUTING_SCHEME = "happ://routing/onadd/"
 
 # region: Keys
 MAIN_MESSAGE_ID_KEY = "main_message_id"
-REPLY_KB_MESSAGE_ID_KEY = "reply_kb_message_id"
 MAIN_MEDIA_MESSAGE_ID_KEY = "main_media_message_id"
 PREVIOUS_CALLBACK_KEY = "previous_callback"
 

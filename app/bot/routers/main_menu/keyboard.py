@@ -1,4 +1,4 @@
-from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup, KeyboardButton, ReplyKeyboardMarkup
+from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 from aiogram.utils.i18n import gettext as _
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 
@@ -10,16 +10,6 @@ from app.bot.utils.navigation import (
     NavSupport,
 )
 
-MENU_BUTTON_TEXT = "📋 Меню"
-
-
-def menu_reply_keyboard() -> ReplyKeyboardMarkup:
-    return ReplyKeyboardMarkup(
-        keyboard=[[KeyboardButton(text=MENU_BUTTON_TEXT)]],
-        resize_keyboard=True,
-        is_persistent=True,
-    )
-
 
 def main_menu_keyboard(
     is_admin: bool = False,
@@ -28,6 +18,23 @@ def main_menu_keyboard(
     is_referred_trial_available: bool = False,
 ) -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
+
+    builder.row(
+        InlineKeyboardButton(
+            text=_("main_menu:button:profile"),
+            callback_data=NavProfile.MAIN,
+        ),
+        InlineKeyboardButton(
+            text=_("main_menu:button:subscription"),
+            callback_data=NavSubscription.MAIN,
+        ),
+    )
+    builder.row(
+        InlineKeyboardButton(
+            text=_("main_menu:button:support"),
+            callback_data=NavSupport.MAIN,
+        )
+    )
 
     if is_referred_trial_available:
         builder.row(
@@ -43,32 +50,14 @@ def main_menu_keyboard(
             )
         )
 
-    builder.row(
-        InlineKeyboardButton(
-            text=_("main_menu:button:profile"),
-            callback_data=NavProfile.MAIN,
-        ),
-        InlineKeyboardButton(
-            text=_("main_menu:button:subscription"),
-            callback_data=NavSubscription.MAIN,
-        ),
-    )
-    builder.row(
-        *(
-            [
-                InlineKeyboardButton(
-                    text=_("main_menu:button:referral"),
-                    callback_data=NavReferral.MAIN,
-                )
-            ]
-            if is_referral_available
-            else []
-        ),
-        InlineKeyboardButton(
-            text=_("main_menu:button:support"),
-            callback_data=NavSupport.MAIN,
-        ),
-    )
+    if is_referral_available:
+        builder.row(
+            InlineKeyboardButton(
+                text=_("main_menu:button:referral"),
+                callback_data=NavReferral.MAIN,
+            )
+        )
+
     builder.row(
         InlineKeyboardButton(
             text=_("main_menu:button:news_channel"),

@@ -34,6 +34,12 @@ def admin_tools_keyboard(is_dev: bool) -> InlineKeyboardMarkup:
     )
     builder.row(
         InlineKeyboardButton(
+            text="🩺 Состояние",
+            callback_data=NavAdminTools.HEALTH,
+        )
+    )
+    builder.row(
+        InlineKeyboardButton(
             text=_("admin_tools:button:user_editor"),
             callback_data=NavAdminTools.USER_EDITOR,
         )
@@ -557,7 +563,7 @@ def user_plan_keyboard(tg_id: int, plans: list[Plan]) -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
     for plan in plans:
         visibility = "👁" if plan.is_public else "🙈"
-        profile = " + БС" if plan.includes_additional_profile else ""
+        profile = " + обход" if plan.includes_additional_profile else ""
         builder.row(
             InlineKeyboardButton(
                 text=f"{visibility} {plan.code} · {plan.title or plan.devices}{profile}",
@@ -615,7 +621,7 @@ def plan_list_keyboard(plans: list[Plan]) -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
     for plan in plans:
         visibility = "👁" if plan.is_public else "🙈"
-        addon = " + БС" if plan.includes_additional_profile else ""
+        addon = " + обход" if plan.includes_additional_profile else ""
         popular = " 🔥" if plan.is_popular else ""
         builder.row(
             InlineKeyboardButton(
@@ -709,6 +715,25 @@ def statistics_keyboard(period_code: str = "7d") -> InlineKeyboardMarkup:
         )
     )
 
+    builder.row(back_button(NavAdminTools.MAIN))
+    builder.row(back_to_main_menu_button())
+    return builder.as_markup()
+
+
+def health_keyboard() -> InlineKeyboardMarkup:
+    builder = InlineKeyboardBuilder()
+    builder.row(
+        InlineKeyboardButton(
+            text="Обновить",
+            callback_data=NavAdminTools.HEALTH,
+        )
+    )
+    builder.row(
+        InlineKeyboardButton(
+            text="Проверить узлы",
+            callback_data=NavAdminTools.HEALTH_CHECK_NODES,
+        )
+    )
     builder.row(back_button(NavAdminTools.MAIN))
     builder.row(back_to_main_menu_button())
     return builder.as_markup()

@@ -95,11 +95,7 @@ ipython_config.py
 #Pipfile.lock
 
 # poetry
-#   Similar to Pipfile.lock, it is generally recommended to include poetry.lock in version control.
-#   This is especially recommended for binary packages to ensure reproducibility, and is more
-#   commonly ignored for libraries.
-#   https://python-poetry.org/docs/basic-usage/#commit-your-poetrylock-file-to-version-control
-poetry.lock
+#   This is an application, so poetry.lock should be committed for reproducible deploys.
 
 # pdm
 #   Similar to Pipfile.lock, it is generally recommended to include pdm.lock in version control.
@@ -165,10 +161,14 @@ cython_debug/
 # Database
 *.db
 *.sqlite3
+*.sqlite3.*
+app/data/
 
 # Archive logs
 *.zip
 *.gz
+*.log.*
+app/logs/
 
 # Plans
 plans.staging.json

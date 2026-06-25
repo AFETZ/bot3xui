@@ -51,20 +51,40 @@ class ClientData:
         return format_size(self._traffic_total)
 
     @property
+    def traffic_total_bytes(self) -> int:
+        return self._traffic_total
+
+    @property
     def traffic_remaining(self) -> str:
         return format_size(self._traffic_remaining)
+
+    @property
+    def traffic_remaining_bytes(self) -> int:
+        return self._traffic_remaining
 
     @property
     def traffic_used(self) -> str:
         return format_size(self._traffic_used)
 
     @property
+    def traffic_used_bytes(self) -> int:
+        return self._traffic_used
+
+    @property
     def traffic_up(self) -> str:
         return format_size(self._traffic_up)
 
     @property
+    def traffic_up_bytes(self) -> int:
+        return self._traffic_up
+
+    @property
     def traffic_down(self) -> str:
         return format_size(self._traffic_down)
+
+    @property
+    def traffic_down_bytes(self) -> int:
+        return self._traffic_down
 
     @property
     def expiry_time(self) -> str:

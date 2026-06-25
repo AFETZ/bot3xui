@@ -32,14 +32,23 @@ class NavDownload(str, Enum):
     PLATFORM_IOS = f"{PLATFORM}_ios"
     PLATFORM_ANDROID = f"{PLATFORM}_android"
     PLATFORM_WINDOWS = f"{PLATFORM}_windows"
+    CLIENT = "client"
+    CLIENT_HAPP = f"{CLIENT}_happ"
+    CLIENT_V2RAYNG = f"{CLIENT}_v2rayng"
+    CLIENT_HIDDIFY = f"{CLIENT}_hiddify"
+    CLIENT_NEKOBOX = f"{CLIENT}_nekobox"
 
 
 class NavSubscription(str, Enum):
     MAIN = "subscription"
     ADDITIONAL_PROFILE = "additional_profile"
+    CHANGE_MODE = "change_mode"
     CHANGE = "change"
     CHANGE_CONFIRM = "change_confirm"
     CHANGE_APPLY = "change_apply"
+    SCHEDULE = "schedule"
+    SCHEDULE_CONFIRM = "schedule_confirm"
+    SCHEDULE_APPLY = "schedule_apply"
     EXTEND = "extend"
     UPGRADE = "upgrade"
     UPGRADE_PAYMENT = "upgrade_payment"
@@ -73,6 +82,8 @@ class NavAdminTools(str, Enum):
     SYNC_SERVERS = "sync_servers"
     STATISTICS = "statistics"
     STATISTICS_PERIOD = "statistics_period"
+    HEALTH = "health"
+    HEALTH_CHECK_NODES = "health_check_nodes"
 
     USER_EDITOR = "user_editor"
     USER_LIST = "user_list"

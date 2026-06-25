@@ -1,3 +1,4 @@
+from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
@@ -541,6 +542,77 @@ async def test_get_subscription_status_treats_blocked_user_as_inactive(
 
 
 @pytest.mark.asyncio
+async def test_get_subscription_status_uses_fresh_local_snapshot_without_panel(
+    subscription_service,
+):
+    expiry_timestamp = int(
+        (datetime.now(timezone.utc) + timedelta(days=5)).timestamp() * 1000
+    )
+    user = SimpleNamespace(
+        tg_id=203,
+        vpn_id="vpn-203",
+        server_id=1,
+        current_plan_code="p3",
+        current_period_duration_days=30,
+        is_blocked=False,
+        subscription_max_devices=3,
+        subscription_traffic_total=-1,
+        subscription_traffic_remaining=-1,
+        subscription_traffic_used=0,
+        subscription_traffic_up=0,
+        subscription_traffic_down=0,
+        subscription_expiry_time=expiry_timestamp,
+        subscription_enabled=True,
+        subscription_last_synced_at=datetime.now(timezone.utc),
+        subscription_sync_status="ok",
+    )
+
+    status = await subscription_service.get_subscription_status(user)
+
+    subscription_service.vpn_service.get_client_data.assert_not_awaited()
+    assert status.status_check_ok is True
+    assert status.is_active is True
+    assert status.client_data.max_devices_count == 3
+
+
+@pytest.mark.asyncio
+async def test_get_subscription_status_uses_stale_snapshot_when_panel_fails(
+    subscription_service,
+):
+    expiry_timestamp = int(
+        (datetime.now(timezone.utc) + timedelta(days=5)).timestamp() * 1000
+    )
+    user = SimpleNamespace(
+        tg_id=204,
+        vpn_id="vpn-204",
+        server_id=1,
+        current_plan_code="p3",
+        current_period_duration_days=30,
+        is_blocked=False,
+        subscription_max_devices=3,
+        subscription_traffic_total=-1,
+        subscription_traffic_remaining=-1,
+        subscription_traffic_used=0,
+        subscription_traffic_up=0,
+        subscription_traffic_down=0,
+        subscription_expiry_time=expiry_timestamp,
+        subscription_enabled=True,
+        subscription_last_synced_at=datetime.now(timezone.utc) - timedelta(hours=1),
+        subscription_sync_status="ok",
+    )
+    subscription_service.vpn_service.get_client_data = AsyncMock(
+        side_effect=RuntimeError("panel down")
+    )
+
+    status = await subscription_service.get_subscription_status(user)
+
+    subscription_service.vpn_service.get_client_data.assert_awaited_once()
+    assert status.status_check_ok is False
+    assert status.is_active is True
+    assert status.client_data.max_devices_count == 3
+
+
+@pytest.mark.asyncio
 async def test_get_subscription_status_by_vpn_id_returns_user_and_status(
     monkeypatch,
     subscription_service,
@@ -581,6 +653,15 @@ def test_get_additional_profile_url_uses_domain_and_vpn_id(subscription_service)
     assert (
         subscription_service.get_additional_profile_url(user)
         == "https://bot.example/wl/vpn-500"
+    )
+
+
+def test_get_filtered_additional_profile_url_uses_domain_and_vpn_id(subscription_service):
+    user = SimpleNamespace(vpn_id="vpn-501")
+
+    assert (
+        subscription_service.get_filtered_additional_profile_url(user)
+        == "https://bot.example/wl-filtered/vpn-501"
     )
 
 

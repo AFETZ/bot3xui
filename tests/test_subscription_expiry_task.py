@@ -1,3 +1,4 @@
+import asyncio
 from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
@@ -39,8 +40,10 @@ class FakeI18n:
 class FakeVPNService:
     def __init__(self, client_data_by_tg_id):
         self.client_data_by_tg_id = client_data_by_tg_id
+        self.inbound_cache_ids = []
 
-    async def get_client_data(self, user):
+    async def get_client_data(self, user, inbound_cache=None):
+        self.inbound_cache_ids.append(id(inbound_cache))
         return self.client_data_by_tg_id[user.tg_id]
 
 
@@ -50,6 +53,28 @@ class FakeNotificationService:
 
     async def notify_by_id(self, chat_id, text):
         self.messages.append((chat_id, text))
+
+
+class TrackingVPNService:
+    def __init__(self, client_data_by_tg_id=None, delay=0):
+        self.client_data_by_tg_id = dict(client_data_by_tg_id or {})
+        self.delay = delay
+        self.calls = []
+        self.inbound_cache_ids = []
+        self.active_calls = 0
+        self.max_active_calls = 0
+
+    async def get_client_data(self, user, inbound_cache=None):
+        self.calls.append(user.tg_id)
+        self.inbound_cache_ids.append(id(inbound_cache))
+        self.active_calls += 1
+        self.max_active_calls = max(self.max_active_calls, self.active_calls)
+        try:
+            if self.delay:
+                await asyncio.sleep(self.delay)
+            return self.client_data_by_tg_id.get(user.tg_id)
+        finally:
+            self.active_calls -= 1
 
 
 def _expiry_ms(hours_left: int) -> int:
@@ -66,7 +91,14 @@ def _client_data(expiry_time: int):
 
 
 async def _run_task(monkeypatch, client_data, redis):
-    user = SimpleNamespace(tg_id=123, language_code="ru")
+    user = SimpleNamespace(
+        tg_id=123,
+        language_code="ru",
+        server_id=1,
+        is_blocked=False,
+        current_period_started_at=None,
+        current_period_duration_days=None,
+    )
     notification_service = FakeNotificationService()
 
     monkeypatch.setattr(
@@ -181,6 +213,114 @@ async def test_legacy_regular_notification_key_blocks_regular_duplicate(monkeypa
 
     assert notification_service.messages == []
     assert redis.set_calls == []
+
+
+@pytest.mark.asyncio
+async def test_far_future_local_period_is_skipped_without_panel_check(monkeypatch):
+    now = datetime.now(timezone.utc)
+    users = [
+        SimpleNamespace(
+            tg_id=1,
+            language_code="ru",
+            server_id=1,
+            is_blocked=False,
+            current_period_started_at=now,
+            current_period_duration_days=30,
+        ),
+        SimpleNamespace(
+            tg_id=2,
+            language_code="ru",
+            server_id=1,
+            is_blocked=False,
+            current_period_started_at=now - timedelta(days=1),
+            current_period_duration_days=2,
+        ),
+    ]
+    vpn_service = TrackingVPNService()
+    notification_service = FakeNotificationService()
+    monkeypatch.setattr(subscription_expiry.User, "get_all", AsyncMock(return_value=users))
+
+    await subscription_expiry.notify_users_with_expiring_subscription(
+        session_factory=DummySessionFactory(),
+        redis=FakeRedis(),
+        i18n=FakeI18n(),
+        vpn_service=vpn_service,
+        notification_service=notification_service,
+    )
+
+    assert vpn_service.calls == [2]
+    assert notification_service.messages == []
+
+
+@pytest.mark.asyncio
+async def test_blocked_users_and_users_without_server_are_skipped(monkeypatch):
+    users = [
+        SimpleNamespace(
+            tg_id=1,
+            language_code="ru",
+            server_id=None,
+            is_blocked=False,
+            current_period_started_at=None,
+            current_period_duration_days=None,
+        ),
+        SimpleNamespace(
+            tg_id=2,
+            language_code="ru",
+            server_id=1,
+            is_blocked=True,
+            current_period_started_at=None,
+            current_period_duration_days=None,
+        ),
+        SimpleNamespace(
+            tg_id=3,
+            language_code="ru",
+            server_id=1,
+            is_blocked=False,
+            current_period_started_at=None,
+            current_period_duration_days=None,
+        ),
+    ]
+    vpn_service = TrackingVPNService()
+    monkeypatch.setattr(subscription_expiry.User, "get_all", AsyncMock(return_value=users))
+
+    await subscription_expiry.notify_users_with_expiring_subscription(
+        session_factory=DummySessionFactory(),
+        redis=FakeRedis(),
+        i18n=FakeI18n(),
+        vpn_service=vpn_service,
+        notification_service=FakeNotificationService(),
+    )
+
+    assert vpn_service.calls == [3]
+
+
+@pytest.mark.asyncio
+async def test_background_check_limits_concurrency_and_shares_inbound_cache(monkeypatch):
+    users = [
+        SimpleNamespace(
+            tg_id=tg_id,
+            language_code="ru",
+            server_id=1,
+            is_blocked=False,
+            current_period_started_at=None,
+            current_period_duration_days=None,
+        )
+        for tg_id in range(10)
+    ]
+    vpn_service = TrackingVPNService(delay=0.02)
+    monkeypatch.setattr(subscription_expiry.User, "get_all", AsyncMock(return_value=users))
+
+    await subscription_expiry.notify_users_with_expiring_subscription(
+        session_factory=DummySessionFactory(),
+        redis=FakeRedis(),
+        i18n=FakeI18n(),
+        vpn_service=vpn_service,
+        notification_service=FakeNotificationService(),
+    )
+
+    assert sorted(vpn_service.calls) == list(range(10))
+    assert vpn_service.max_active_calls <= subscription_expiry.EXPIRY_CHECK_CONCURRENCY
+    assert len(set(vpn_service.inbound_cache_ids)) == 1
 
 
 @pytest.mark.asyncio

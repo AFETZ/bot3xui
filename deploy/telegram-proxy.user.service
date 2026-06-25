@@ -1,0 +1,13 @@
+[Unit]
+Description=Telegram SOCKS proxy for 3xui-shop
+After=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/home/andrey/apps/3xui-shop
+ExecStart=/home/andrey/apps/3xui-shop/scripts/run_telegram_proxy.sh
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=default.target

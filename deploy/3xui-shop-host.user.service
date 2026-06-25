@@ -1,0 +1,14 @@
+[Unit]
+Description=3xui-shop host bot fallback
+After=network-online.target telegram-proxy.user.service
+Requires=telegram-proxy.user.service
+
+[Service]
+Type=simple
+WorkingDirectory=/home/andrey/apps/3xui-shop
+ExecStart=/home/andrey/apps/3xui-shop/scripts/run_bot_host.sh
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=default.target

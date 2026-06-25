@@ -88,6 +88,9 @@ class AdminUserDetails:
     subscription_status_ok: bool
     subscription_active: bool
     subscription_plan_code: str | None
+    pending_plan_code: str | None
+    pending_period_duration_days: int | None
+    pending_plan_starts_at: int | None
     expiry_timestamp: int | None
     traffic_used: str | None
     devices: str | int | None

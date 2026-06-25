@@ -10,7 +10,6 @@ from aiohttp.web import Application
 from sqlalchemy.ext.asyncio import async_sessionmaker
 
 from app.bot.models import ServicesContainer, SubscriptionData
-from app.bot.routers.main_menu.handler import redirect_to_main_menu
 from app.bot.utils.constants import (
     DEFAULT_LANGUAGE,
     EVENT_PAYMENT_CANCELED_TAG,
@@ -68,7 +67,27 @@ class PaymentGateway(ABC):
         return False
 
     async def _on_payment_succeeded(self, payment_id: str) -> None:
+        from app.bot.services.job_locks import RedisJobLock
+        from app.bot.services.runtime_metrics import runtime_metrics
+
         logger.info(f"Payment succeeded {payment_id}")
+        redis = getattr(self.storage, "redis", None)
+        if redis is None:
+            await self._process_payment_succeeded(payment_id)
+            return
+
+        async with RedisJobLock(redis, f"payment:process:{payment_id}", 5 * 60) as acquired:
+            if not acquired:
+                runtime_metrics.increment("payments.success_duplicate_locked")
+                logger.info(
+                    "Payment %s is already being processed. Skipping duplicate success event.",
+                    payment_id,
+                )
+                return
+            await self._process_payment_succeeded(payment_id)
+
+    async def _process_payment_succeeded(self, payment_id: str) -> None:
+        from app.bot.services.runtime_metrics import runtime_metrics
 
         async with self.session() as session:
             transaction = await Transaction.get_by_id(session=session, payment_id=payment_id)
@@ -80,6 +99,7 @@ class PaymentGateway(ABC):
                 return
 
             if transaction.status == TransactionStatus.COMPLETED:
+                runtime_metrics.increment("payments.success_duplicate_completed")
                 logger.info(
                     "Payment %s already processed (status=%s). Skipping duplicate webhook.",
                     payment_id,
@@ -113,6 +133,8 @@ class PaymentGateway(ABC):
             )
             return
 
+        is_web_user = user.tg_id < 0
+
         # Prepare locale for notification
         locale = user.language_code if user else DEFAULT_LANGUAGE
         with self.i18n.use_locale(locale):
@@ -140,10 +162,11 @@ class PaymentGateway(ABC):
                     user.tg_id,
                     data.plan_code,
                 )
-                await self.services.notification.notify_upgrade_success(
-                    user_id=user.tg_id,
-                    plan_title=resolved_plan.title if resolved_plan else data.plan_code,
-                )
+                if not is_web_user:
+                    await self.services.notification.notify_upgrade_success(
+                        user_id=user.tg_id,
+                        plan_title=resolved_plan.title if resolved_plan else data.plan_code,
+                    )
                 success = True
             elif data.is_extend:
                 success = await self.services.vpn.extend_subscription(
@@ -160,10 +183,11 @@ class PaymentGateway(ABC):
                             period_duration_days=data.duration,
                         )
                     logger.info(f"Subscription extended for user {user.tg_id}")
-                    await self.services.notification.notify_extend_success(
-                        user_id=user.tg_id,
-                        data=data,
-                    )
+                    if not is_web_user:
+                        await self.services.notification.notify_extend_success(
+                            user_id=user.tg_id,
+                            data=data,
+                        )
             elif data.is_change:
                 success = await self.services.vpn.change_subscription(
                     user=user,
@@ -177,11 +201,12 @@ class PaymentGateway(ABC):
                             refresh_period=False,
                         )
                     logger.info(f"Subscription plan changed for user {user.tg_id}")
-                    await self.services.notification.notify_change_success(
-                        user_id=user.tg_id,
-                        data=data,
-                        plan_title=resolved_plan.title if resolved_plan else "",
-                    )
+                    if not is_web_user:
+                        await self.services.notification.notify_change_success(
+                            user_id=user.tg_id,
+                            data=data,
+                            plan_title=resolved_plan.title if resolved_plan else "",
+                        )
             else:
                 success = await self.services.vpn.create_subscription(
                     user=user,
@@ -197,11 +222,12 @@ class PaymentGateway(ABC):
                             period_duration_days=data.duration,
                         )
                     logger.info(f"Subscription created for user {user.tg_id}")
-                    key = await self.services.vpn.get_key(user)
-                    await self.services.notification.notify_purchase_success(
-                        user_id=user.tg_id,
-                        key=key,
-                    )
+                    if not is_web_user:
+                        key = await self.services.vpn.get_key(user)
+                        await self.services.notification.notify_purchase_success(
+                            user_id=user.tg_id,
+                            key=key,
+                        )
 
             if success:
                 async with self.session() as session:
@@ -210,6 +236,7 @@ class PaymentGateway(ABC):
                         payment_id=payment_id,
                         status=TransactionStatus.COMPLETED,
                     )
+                runtime_metrics.increment("payments.success_processed")
 
                 if self.config.shop.REFERRER_REWARD_ENABLED:
                     await self.services.referral.add_referrers_rewards_on_payment(
@@ -231,13 +258,16 @@ class PaymentGateway(ABC):
                     ),
                 )
 
-                await redirect_to_main_menu(
-                    bot=self.bot,
-                    user=user,
-                    services=self.services,
-                    config=self.config,
-                    storage=self.storage,
-                )
+                if not is_web_user:
+                    from app.bot.routers.main_menu.handler import redirect_to_main_menu
+
+                    await redirect_to_main_menu(
+                        bot=self.bot,
+                        user=user,
+                        services=self.services,
+                        config=self.config,
+                        storage=self.storage,
+                    )
             else:
                 logger.error(
                     "Failed to process subscription for user %s after payment %s.",

@@ -112,7 +112,7 @@ async def callback_test_purchase(
     await callback.message.edit_text(
         text=(
             "Тестовая покупка:\n\n"
-            "Тариф: 5 устройств + обход белых списков\n"
+            "Тариф: 5 устройств + обход БС\n"
             "Срок: 30 дней\n"
             "Цена: 10 ₽"
         ),

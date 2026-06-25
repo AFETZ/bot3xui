@@ -14,6 +14,7 @@ from datetime import datetime, timezone
 
 from sqlalchemy.ext.asyncio import async_sessionmaker
 
+from app.bot.services.subscription_state import client_data_from_user_snapshot
 from app.bot.utils.constants import Currency
 from app.bot.utils.formatting import format_date, normalize_price
 from app.bot.utils.time import get_current_timestamp
@@ -118,14 +119,16 @@ class SubscriptionService:
         return self.plan_service.get_plan(client_data.max_devices_count)
 
     async def get_subscription_status(self, user: User) -> SubscriptionStatus:
-        client_data = None
+        client_data = client_data_from_user_snapshot(user, require_fresh=True)
+        fallback_client_data = client_data_from_user_snapshot(user, require_fresh=False)
         status_check_ok = True
 
-        if user.server_id:
+        if client_data is None and user.server_id:
             try:
                 client_data = await self.vpn_service.get_client_data(user=user, raise_on_error=True)
             except Exception as exception:
                 status_check_ok = False
+                client_data = fallback_client_data
                 logger.error(
                     "Failed to resolve active subscription state for user %s: %s",
                     user.tg_id,
@@ -179,11 +182,20 @@ class SubscriptionService:
         status = await self.get_subscription_status(user)
         return status.status_check_ok and status.has_additional_profile
 
+    def _public_base_url(self) -> str:
+        domain = self.config.bot.DOMAIN.rstrip("/")
+        if not domain.startswith(("http://", "https://")):
+            domain = f"https://{domain}"
+        return domain
+
     def get_additional_profile_url(self, user: User) -> str:
-        return f"{self.config.bot.DOMAIN}/wl/{user.vpn_id}"
+        return f"{self._public_base_url()}/wl/{user.vpn_id}"
+
+    def get_filtered_additional_profile_url(self, user: User) -> str:
+        return f"{self._public_base_url()}/wl-filtered/{user.vpn_id}"
 
     def get_cabinet_url(self, user: User) -> str:
-        return f"{self.config.bot.DOMAIN.rstrip('/')}/cabinet/{user.vpn_id}"
+        return f"{self._public_base_url()}/cabinet/{user.vpn_id}"
 
     async def get_upstream_profile_url(self, user: User) -> str | None:
         return await self.vpn_service.get_upstream_key(user)
@@ -446,8 +458,17 @@ class SubscriptionService:
         *,
         refresh_period: bool,
         period_duration_days: int | None = None,
+        clear_pending: bool = True,
     ) -> None:
         updates: dict[str, object] = {"current_plan_code": plan_code}
+        if clear_pending:
+            updates.update(
+                {
+                    "pending_plan_code": None,
+                    "pending_period_duration_days": None,
+                    "pending_plan_starts_at": None,
+                }
+            )
 
         if refresh_period:
             try:
@@ -484,9 +505,53 @@ class SubscriptionService:
             await User.update(session=session, tg_id=user.tg_id, **updates)
 
         user.current_plan_code = plan_code
+        if clear_pending:
+            user.pending_plan_code = None
+            user.pending_period_duration_days = None
+            user.pending_plan_starts_at = None
         if "current_period_started_at" in updates:
             user.current_period_started_at = updates["current_period_started_at"]  # type: ignore[assignment]
             user.current_period_duration_days = updates["current_period_duration_days"]  # type: ignore[assignment]
+
+    async def schedule_next_plan(
+        self,
+        user: User,
+        *,
+        plan_code: str,
+        period_duration_days: int,
+        starts_at: int | None,
+    ) -> None:
+        updates = {
+            "pending_plan_code": plan_code,
+            "pending_period_duration_days": period_duration_days,
+            "pending_plan_starts_at": starts_at,
+        }
+        async with self.session_factory() as session:
+            await User.update(session=session, tg_id=user.tg_id, **updates)
+
+        user.pending_plan_code = plan_code
+        user.pending_period_duration_days = period_duration_days
+        user.pending_plan_starts_at = starts_at
+        logger.info(
+            "Scheduled next tariff for user %s: plan=%s duration_days=%s starts_at=%s",
+            user.tg_id,
+            plan_code,
+            period_duration_days,
+            starts_at,
+        )
+
+    async def clear_scheduled_plan(self, user: User) -> None:
+        updates = {
+            "pending_plan_code": None,
+            "pending_period_duration_days": None,
+            "pending_plan_starts_at": None,
+        }
+        async with self.session_factory() as session:
+            await User.update(session=session, tg_id=user.tg_id, **updates)
+
+        user.pending_plan_code = None
+        user.pending_period_duration_days = None
+        user.pending_plan_starts_at = None
 
     async def is_trial_available(self, user: User) -> bool:
         is_first_check_ok = (

@@ -34,15 +34,20 @@ def patch_i18n(monkeypatch):
     monkeypatch.setattr("app.bot.utils.formatting._", fake_gettext)
 
 
-def test_main_menu_keyboard_contains_subscription_entrypoint():
+def test_main_menu_keyboard_keeps_primary_inline_entrypoints():
     markup = main_menu_keyboard()
+    texts = flatten_keyboard_texts(markup)
 
-    assert "main_menu:button:subscription" in flatten_keyboard_texts(markup)
+    assert "main_menu:button:profile" in texts
+    assert "main_menu:button:subscription" in texts
+    assert "main_menu:button:support" in texts
+    assert "main_menu:button:news_channel" in texts
 
 
 def test_additional_profile_keyboard_contains_relevant_actions():
     markup = additional_profile_keyboard(
         additional_profile_url="https://bot.example/wl/vpn-1",
+        filtered_additional_profile_url="https://bot.example/wl-filtered/vpn-1",
         upgrade_callback_data=SubscriptionData(
             state=NavSubscription.UPGRADE,
             user_id=1,
@@ -53,9 +58,10 @@ def test_additional_profile_keyboard_contains_relevant_actions():
 
     texts = flatten_keyboard_texts(markup)
 
-    assert "Получить основную ссылку" in texts
-    assert "Получить ссылку обхода белых списков" in texts
-    assert "Подключить обход белых списков" in texts
+    assert "Подключить основную подписку" in texts
+    assert "Подписка обхода БС — рекомендуется" in texts
+    assert "Подписка обхода БС — запасной вариант" in texts
+    assert "Подключить подписку обхода БС" in texts
     assert "Открыть подписку" in texts
 
 
@@ -140,9 +146,9 @@ async def test_callback_additional_profile_shows_upgrade_offer():
 
     assert message.edit_text.await_count == 1
     kwargs = message.edit_text.await_args.kwargs
-    assert "Обход белых списков" in kwargs["text"]
+    assert "Подписка обхода БС" in kwargs["text"]
     assert "Доплата за оставшийся период: 75 ₽" in kwargs["text"]
-    assert "Подключить обход белых списков" in flatten_keyboard_texts(
+    assert "Подключить подписку обхода БС" in flatten_keyboard_texts(
         kwargs["reply_markup"]
     )
 
@@ -178,5 +184,5 @@ async def test_callback_additional_profile_shows_subscription_cta_for_inactive_u
     )
 
     kwargs = message.edit_text.await_args.kwargs
-    assert "Оформите тариф с обходом белых списков" in kwargs["text"]
+    assert "Оформите тариф с обходом БС" in kwargs["text"]
     assert "Открыть подписку" in flatten_keyboard_texts(kwargs["reply_markup"])
