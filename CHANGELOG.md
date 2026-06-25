@@ -4,6 +4,13 @@ All notable changes to this project are documented here.
 
 The format follows Keep a Changelog, and releases use Semantic Versioning.
 
+## [Unreleased]
+
+### Changed
+
+- Polished the project README as a production-facing overview.
+- Expanded versioned GitHub Wiki source with operations, configuration, connection modes, user flows, payments, and contributors documentation.
+
 ## [1.1.0] - 2026-06-25
 
 ### Added

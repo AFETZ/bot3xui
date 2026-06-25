@@ -2,24 +2,65 @@
 
 ## Ежедневные Проверки
 
-- Container status: `docker ps`.
-- Bot logs: `docker logs --tail=120 3xui-shop-bot`.
-- Health endpoint: `curl -I https://afzvpn.superbebra.uk/healthz`.
-- Smoke-test подписки с активным `vpn_id`.
+```bash
+docker ps
+docker logs --tail=120 3xui-shop-bot
+curl -I https://afzvpn.superbebra.uk/healthz
+```
 
-## Runtime Files
+Проверить вручную:
 
-Не коммитить:
+- бот отвечает в Telegram;
+- активная ссылка `/sub/{vpn_id}` открывается;
+- подписка обхода БС открывается на тарифе с `includes_additional_profile`;
+- платежные callbacks не сыпят ошибки;
+- Redis container жив;
+- в логах нет циклического restart loop.
 
-- `.env`
-- `.local/`
-- `app/data/`
-- `app/logs/`
-- `backups/`
-
-## Restart
+## Деплой
 
 ```bash
 docker compose up -d --build bot
 docker logs --tail=120 3xui-shop-bot
 ```
+
+Успешный старт обычно содержит:
+
+- `Bot started`;
+- `Start polling` или текущий webhook URL;
+- `Web app started on 0.0.0.0:8080`;
+- успешный Alembic upgrade.
+
+## Polling И Webhook
+
+Текущий режим задается `BOT_USE_WEBHOOK`.
+
+Polling проще в эксплуатации, но держит постоянный long polling к Telegram API. Webhook лучше для production, если домен, TLS, reverse proxy и secret-path подготовлены. Перед переключением на webhook проверить:
+
+- `BOT_DOMAIN` доступен по HTTPS;
+- `/webhook` принимает `POST`;
+- reverse proxy корректно прокидывает `X-Forwarded-*`;
+- Telegram API доступен без нестабильного proxy.
+
+## Бэкапы
+
+Перед крупными изменениями сохранить:
+
+- SQLite database из `app/data`;
+- `.env`;
+- `plans.json`;
+- актуальные compose/deploy файлы;
+- список docker images/containers.
+
+Runtime state не коммитится в Git.
+
+## Логи
+
+Основной лог: `app/logs/app.log`.
+
+Ротация управляется:
+
+- `LOG_MAX_BYTES`;
+- `LOG_BACKUP_COUNT`.
+
+Логи могут содержать production-контекст, поэтому не отправлять их в публичные issues без редактирования.

@@ -1,23 +1,56 @@
 # Архитектура
 
+AFZVPN Bot состоит из Telegram-бота, aiohttp web app, локальной базы, Redis и внешних 3X-UI панелей. 3X-UI остается источником правды для реальных VPN-клиентов, inbound, traffic и expiry.
+
 ## Runtime
 
-- `3xui-shop-bot` запускает Telegram-бота и aiohttp web app.
-- `3xui-shop-redis` хранит FSM/background state.
-- Traefik завершает HTTPS и проксирует публичный трафик на порт бота `8080`.
-- Панели 3X-UI остаются источником правды для VPN-клиентов и inbound.
+```text
+Telegram
+  -> aiogram Router
+  -> Services layer
+  -> SQLite / Redis / 3X-UI
+  -> aiohttp public endpoints
+  -> Happ / payment gateways / web cabinet
+```
+
+## Компоненты
+
+| Компонент | Ответственность |
+| --- | --- |
+| `app/__main__.py` | старт bot + web app, polling/webhook, scheduler, Redis, payment gateways |
+| `app/bot/routers` | Telegram UI, callback navigation, user/admin flows |
+| `app/bot/services` | подписки, VPN, server pool, notifications, job locks, runtime metrics |
+| `app/bot/tasks` | фоновые reconciliation и expiry jobs |
+| `app/web` | subscription proxy, additional profiles, connection redirect, cabinet |
+| `app/db` | SQLAlchemy models, Alembic migrations |
+| `plans.json` | коммерческий каталог тарифов |
 
 ## Public Endpoints
 
-- `/healthz` - health check.
-- `/sub/{vpn_id}` - основная подписка.
-- `/wl-filtered/{vpn_id}` - рекомендуемая подписка обхода БС.
-- `/wl/{vpn_id}` - запасная подписка обхода БС.
-- `/cabinet/{vpn_id}` - личный кабинет пользователя.
-- payment gateway callbacks по настройкам платежных шлюзов.
+| Route | Назначение |
+| --- | --- |
+| `/healthz` | health check |
+| `/webhook` | Telegram webhook endpoint |
+| `/connection` | redirect для Happ deep-links |
+| `/sub/{vpn_id}` | основная подписка |
+| `/wl-filtered/{vpn_id}` | рекомендуемая подписка обхода БС |
+| `/wl/{vpn_id}` | запасная подписка обхода БС |
+| `/cabinet/{vpn_id}` | web cabinet |
+| payment callbacks | YooKassa, YooMoney, Cryptomus, Heleket |
 
 ## Data Ownership
 
-- Bot database: пользователи, транзакции, промокоды, локальные снимки подписок.
-- 3X-UI: реальные клиенты, трафик, сроки, состояние inbound.
-- `plans.json`: каталог тарифов.
+| Данные | Где источник правды |
+| --- | --- |
+| Telegram user, plan, local state | bot SQLite |
+| VPN client, traffic, expiry | 3X-UI |
+| FSM/background state | Redis |
+| тарифы | `plans.json` |
+| платежные транзакции | bot SQLite + payment gateway callback |
+
+## Важные Границы
+
+- Бот не должен отдавать подписку неактивному пользователю.
+- Web endpoints валидируют `vpn_id` и состояние подписки.
+- Runtime state не хранится в Git.
+- Миграции Alembic должны быть совместимы с существующей production-базой.

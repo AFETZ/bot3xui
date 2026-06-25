@@ -1,112 +1,91 @@
 # AFZVPN Bot
 
-Production Telegram bot for selling and managing VPN subscriptions through 3X-UI.
+<p align="center">
+  <img src="app/assets/start_banner.jpg" alt="AFZVPN banner" width="900">
+</p>
 
-[![Release](https://img.shields.io/github/v/tag/AFETZ/bot3xui?label=release)](https://github.com/AFETZ/bot3xui/tags)
-[![CI](https://github.com/AFETZ/bot3xui/actions/workflows/ci.yml/badge.svg)](https://github.com/AFETZ/bot3xui/actions/workflows/ci.yml)
-[![Python](https://img.shields.io/badge/python-3.12-blue)](https://www.python.org/)
-[![Telegram](https://img.shields.io/badge/Telegram-bot-229ED9)](https://telegram.org/)
-[![License](https://img.shields.io/github/license/AFETZ/bot3xui)](LICENSE)
+<p align="center">
+  <strong>Production Telegram bot for selling, issuing, renewing, and operating AFZVPN subscriptions through 3X-UI.</strong>
+</p>
+
+<p align="center">
+  <a href="https://github.com/AFETZ/bot3xui/releases/tag/v1.1.0"><img alt="Release" src="https://img.shields.io/github/v/tag/AFETZ/bot3xui?label=release"></a>
+  <a href="https://github.com/AFETZ/bot3xui/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/AFETZ/bot3xui/actions/workflows/ci.yml/badge.svg?branch=main"></a>
+  <img alt="Python" src="https://img.shields.io/badge/Python-3.12-3776AB">
+  <img alt="aiogram" src="https://img.shields.io/badge/aiogram-3-229ED9">
+  <img alt="Docker" src="https://img.shields.io/badge/Docker-Compose-2496ED">
+  <a href="LICENSE"><img alt="License" src="https://img.shields.io/github/license/AFETZ/bot3xui"></a>
+</p>
 
 ## Что Это
 
-**AFZVPN Bot** - продовая версия Telegram-бота для продажи VPN-подписок. Он связывает пользователей Telegram, оплаты, клиентов 3X-UI, тарифы, промокоды, поддержку и админские инструменты в один рабочий сервис.
+**AFZVPN Bot** - продовая сборка Telegram-бота для VPN-сервиса. Он связывает витрину тарифов, оплаты, 3X-UI, Happ-подключение, подписку обхода БС, админку, уведомления, бэкапы и операционные сценарии в один управляемый сервис.
 
-Проект вырос из идеи `3xui-shop`, но этот репозиторий поддерживается как кастомная сборка AFZVPN: с продовыми правками, Happ-онбордингом, подпиской обхода БС, админкой и операционными скриптами.
+Проект вырос из open-source базы `3xui-shop`, но текущий репозиторий поддерживается как кастомная production-версия AFZVPN: с собственным онбордингом, web cabinet, защитой runtime, multi-server логикой, релизным процессом и версионируемой wiki.
 
-## Основные Возможности
+## Возможности
 
-- Telegram-бот для продажи и управления VPN-подписками
-- интеграция с 3X-UI для создания, продления, проверки и управления клиентами
-- тарифы с разными сроками, валютами и количеством устройств
-- one-click подключение в Happ для iOS, Android и Windows
-- **РФ-сервисы напрямую, остальное через VPN**: отдельный режим Happ для удобной работы российских сервисов
-- прокси основного профиля `/sub/{vpn_id}` с проверкой активной подписки
-- подписка обхода БС для тарифов, где она включена
-- рекомендуемый источник обхода БС `/wl-filtered/{vpn_id}` и запасной источник `/wl/{vpn_id}`
-- пробный период и реферальные бонусы
-- многоразовые промокоды с лимитами активаций
-- платежи: Telegram Stars, YooKassa, YooMoney, Cryptomus, Heleket
-- админка для пользователей, статистики, серверов, промокодов, уведомлений, бэкапов, техрежима и рестарта
-- polling или webhook режим
-- Redis FSM storage, SQLite, Alembic, Docker
+| Зона | Что уже есть |
+| --- | --- |
+| Продажи | тарифы, сроки, валюты, пробный период, промокоды, апгрейд на тариф с обходом БС |
+| Оплаты | Telegram Stars, YooKassa, YooMoney, Cryptomus, Heleket |
+| VPN | создание и продление клиентов в 3X-UI, multi-server profile, проверка активной подписки |
+| Подключение | Happ для iOS, Android и Windows, deep-link `/connection`, основной профиль `/sub/{vpn_id}` |
+| РФ-сценарий | отдельная настройка Happ: РФ-сервисы напрямую, остальное через VPN |
+| Обход БС | рекомендуемая подписка `/wl-filtered/{vpn_id}` и запасная `/wl/{vpn_id}` |
+| Админка | пользователи, серверы, статистика, промокоды, уведомления, health, бэкапы, техрежим, рестарт |
+| Операции | Docker Compose, Redis FSM, SQLite, Alembic, CI, Dependabot, release archive |
 
-## Пользовательский Путь
+## Пользовательский Флоу
 
 1. Пользователь открывает Telegram-бота.
 2. Выбирает тариф, срок и способ оплаты.
 3. После оплаты бот создает или продлевает клиента в 3X-UI.
 4. Пользователь открывает **Профиль -> Подключиться -> Выбор платформы**.
-5. Бот дает кнопки:
-   - **Подключить основную подписку**
-   - **РФ-сервисы напрямую, остальное через VPN**
-   - **Подписка обхода БС — рекомендуется**, если она включена в тариф
-   - **Подписка обхода БС — запасной вариант**, если рекомендованный вариант не подошел
+5. Бот показывает одинаково понятный путь для iOS, Android и Windows:
+   - **Подключить основную подписку**;
+   - **РФ-сервисы напрямую, остальное через VPN**;
+   - **Подписка обхода БС - рекомендуется**;
+   - **Подписка обхода БС - запасной вариант**;
+   - **Скачать Happ**.
 
-Основная подписка и подписка обхода БС - разные подключения. БС означает "белые списки"; этот термин уже используется в тарифах и поддержке.
+Основная подписка и подписка обхода БС - разные подключения. БС означает "белые списки"; это устоявшийся термин в тарифах и поддержке.
 
-## Режим Для РФ
+## Архитектура
 
-Режим **РФ-сервисы напрямую, остальное через VPN** - отдельная настройка Happ, чтобы пользователю не приходилось постоянно включать и выключать VPN:
+```text
+Telegram user
+  -> aiogram bot
+  -> Subscription / Payment / Admin services
+  -> SQLite + Redis
+  -> 3X-UI panels
+  -> aiohttp public endpoints
+  -> Happ / payment gateways / web cabinet
+```
 
-- российские домены и российские IP идут напрямую
-- зарубежные сервисы продолжают идти через VPN
-- настройка включается одной кнопкой: **Профиль -> Подключиться -> Выбор платформы -> РФ-сервисы напрямую, остальное через VPN**
+| Компонент | Ответственность |
+| --- | --- |
+| `app/__main__.py` | старт bot + web app, polling/webhook, scheduler, Redis, gateway setup |
+| `app/bot/routers` | Telegram UI, callback flow, админские экраны |
+| `app/bot/services` | бизнес-логика подписок, 3X-UI, серверов, jobs, runtime metrics |
+| `app/web` | публичные subscription endpoints, connection redirect, cabinet |
+| `app/db` | SQLAlchemy models и Alembic migrations |
+| `plans.json` | commercial plan catalog |
 
-Это удобно, если пользователю нужны российские банки, маркетплейсы, госуслуги и локальные приложения, но при этом зарубежные сервисы должны оставаться доступными через VPN.
-
-Маршруты могут донастраиваться по обратной связи пользователей.
-
-## Админка
-
-В боте есть админский раздел для ежедневной эксплуатации:
-
-- поиск пользователей и карточка пользователя
-- контекст подписки и оплат
-- статистика бота
-- управление пулом серверов
-- создание, редактирование и удаление промокодов
-- массовые и личные уведомления
-- резервные копии базы
-- режим обслуживания
-- рестарт бота из Telegram
-
-## Web Routes
+## Public Endpoints
 
 | Route | Назначение |
 | --- | --- |
 | `/healthz` | health check |
-| `/webhook` | Telegram webhook |
-| `/connection` | redirect для deep-link в Happ |
-| `/sub/{vpn_id}` | прокси основного профиля |
+| `/webhook` | Telegram webhook endpoint |
+| `/connection` | redirect для Happ deep-links |
+| `/sub/{vpn_id}` | основная подписка |
 | `/wl-filtered/{vpn_id}` | рекомендуемая подписка обхода БС |
 | `/wl/{vpn_id}` | запасная подписка обхода БС |
-| `/yookassa` | YooKassa webhook |
-| `/yoomoney` | YooMoney webhook |
-| `/cryptomus` | Cryptomus webhook |
-| `/heleket` | Heleket webhook |
-
-## Stack
-
-- Python 3.12
-- aiogram 3
-- aiohttp
-- SQLAlchemy + Alembic
-- SQLite
-- Redis
-- APScheduler
-- py3xui
-- Docker Compose
-- Traefik-compatible deployment
+| `/cabinet/{vpn_id}` | web cabinet пользователя |
+| `/yookassa`, `/yoomoney`, `/cryptomus`, `/heleket` | payment callbacks |
 
 ## Быстрый Старт
-
-Нужно заранее подготовить:
-
-- Docker и Docker Compose
-- Telegram bot token
-- доступы к 3X-UI
-- публичный HTTPS-домен для webhook и connection links
 
 ```bash
 git clone https://github.com/AFETZ/bot3xui.git
@@ -114,101 +93,106 @@ cd bot3xui
 cp .env.example .env
 ```
 
-Заполните `.env` и настройте `plans.json`, затем запустите:
+Заполнить `.env`, проверить `plans.json`, затем запустить:
 
 ```bash
 docker compose up -d --build
 ```
 
-Только продовый bot service:
+Только production bot service:
 
 ```bash
 docker compose up -d --build bot
+docker logs --tail=120 3xui-shop-bot
 ```
 
-## Важные Переменные Окружения
+## Ключевые Настройки
 
 | Variable | Для чего |
 | --- | --- |
 | `BOT_TOKEN` | токен Telegram-бота |
-| `BOT_DEV_ID` | Telegram ID разработчика |
-| `BOT_ADMINS` | Telegram ID админов через запятую |
-| `BOT_DOMAIN` | публичный домен, например `https://example.com` |
-| `BOT_HOST` | host для Traefik labels или deploy-конфига |
+| `BOT_DOMAIN` | публичный HTTPS base URL |
 | `BOT_USE_WEBHOOK` | `True` для webhook, `False` для polling |
-| `BOT_PROXY_URL` | optional SOCKS5 proxy для Telegram API; если proxy недоступен, бот стартует без него |
-| `BOT_PROXY_STRICT` | `True`, если недоступный `BOT_PROXY_URL` должен останавливать старт |
-| `BOT_PROXY_CHECK_TIMEOUT` | таймаут проверки proxy в секундах |
-| `XUI_USERNAME` | логин 3X-UI |
-| `XUI_PASSWORD` | пароль 3X-UI |
-| `XUI_SUBSCRIPTION_SCHEME` | схема subscription URL |
-| `XUI_SUBSCRIPTION_PORT` | порт подписки |
-| `XUI_SUBSCRIPTION_PATH` | path подписки |
-| `SHOP_CURRENCY` | основная валюта магазина |
-| `LOG_MAX_BYTES` | максимальный размер `app/logs/app.log`, по умолчанию 10485760 |
-| `LOG_BACKUP_COUNT` | сколько архивов `app.log` хранить, по умолчанию 5 |
-| `SHOP_PAYMENT_STARS_ENABLED` | включить Telegram Stars |
-| `SHOP_PAYMENT_YOOKASSA_ENABLED` | включить YooKassa |
-| `SHOP_PAYMENT_YOOMONEY_ENABLED` | включить YooMoney |
-| `SHOP_PAYMENT_CRYPTOMUS_ENABLED` | включить Cryptomus |
-| `SHOP_PAYMENT_HELEKET_ENABLED` | включить Heleket |
+| `BOT_PROXY_URL` | SOCKS5 proxy для Telegram API, если нужен |
+| `XUI_USERNAME`, `XUI_PASSWORD` | доступ к 3X-UI |
+| `XUI_SUBSCRIPTION_*` | схема, порт и path подписки 3X-UI |
+| `SHOP_PAYMENT_*_ENABLED` | включение платежных шлюзов |
+| `LOG_MAX_BYTES`, `LOG_BACKUP_COUNT` | ротация `app/logs/app.log` |
 
-Не коммитьте `.env`, дампы базы, Redis data, сертификаты, логи и локальные runtime-файлы.
+Полный список - в [.env.example](.env.example).
 
 ## Тарифы
 
-Тарифы настраиваются в `plans.json`.
+Тарифы описываются в [plans.json](plans.json). Важные поля:
 
-Поддерживаемые поля:
+- `code` - стабильный код тарифа;
+- `title` - название для пользователя;
+- `devices` - лимит устройств;
+- `prices` - цены по валютам и срокам;
+- `includes_additional_profile` - доступ к подписке обхода БС;
+- `upgrade_from` - тариф, с которого разрешен апгрейд.
 
-- `code`
-- `title`
-- `devices`
-- `prices`
-- `is_public`
-- `is_popular`
-- `includes_additional_profile`
-- `upgrade_from`
+## Качество
 
-Тарифы с `includes_additional_profile: true` открывают подписку обхода БС.
-
-## Тесты
-
-Полный прогон:
+Локальный прогон:
 
 ```bash
-./.venv/bin/pytest
-```
-
-Через Poetry:
-
-```bash
+poetry install --no-interaction --no-root
 poetry run pytest
 ```
 
-Последняя проверка перед baseline-коммитом:
+Через Docker:
 
-```text
-21 passed
+```bash
+docker run --rm -v "$PWD:/repo" -w /repo 3xui-shop-bot \
+  sh -lc 'poetry install --no-interaction --no-root && poetry run python -m pytest tests'
 ```
 
-## Production Notes
+Последний полный baseline-прогон: `112 passed`.
 
-- `main` - продовая ветка.
-- `v1.1.0` - текущий baseline release этой кастомной AFZVPN-сборки.
-- Runtime state живет вне Git: `.env`, `.local/`, Redis data, logs, certs, database backups.
-- Перед крупными деплоями делайте backup bundle и архив рабочего дерева.
+## Документация
+
+Wiki-source хранится в [docs/wiki](docs/wiki), поэтому документация версионируется вместе с кодом.
+
+- GitHub Wiki: https://github.com/AFETZ/bot3xui/wiki
+- Release notes: [CHANGELOG.md](CHANGELOG.md)
+- Версионирование: [docs/versioning_ru.md](docs/versioning_ru.md)
+- Release process: [docs/release_process_ru.md](docs/release_process_ru.md)
+
+Синхронизация wiki:
+
+```bash
+scripts/sync_github_wiki.sh https://github.com/AFETZ/bot3xui.wiki.git
+```
+
+## Безопасность
+
+Не коммитить:
+
+- `.env`, `.env.staging`;
+- базы SQLite и дампы;
+- Redis data;
+- payment keys;
+- 3X-UI credentials;
+- логи и backup bundles.
+
+Перед push:
+
+```bash
+git status --short --ignored
+git diff --cached --name-only
+git diff --cached --check
+```
+
+## Contributors
+
+GitHub показывает contributors по авторам коммитов в истории Git. Это не список людей с текущим доступом к репозиторию.
+
+В этом репозитории видны 7 GitHub-профилей, потому что история включает исходный `3xui-shop`, pull requests из upstream-этапа и AFZVPN production-коммиты. Права на push проверяются отдельно в GitHub settings, а не по блоку Contributors.
 
 ## Credits
 
-Проект вырос из open-source экосистемы `3xui-shop` и адаптирован под production-задачи AFZVPN.
-
-Запасная подписка обхода БС `/wl/{vpn_id}` отдает Universal-подписку через
-серверный fallback по зеркалам. Пользовательская ссылка остается одной и той же.
-
-Рекомендуемая подписка обхода БС `/wl-filtered/{vpn_id}` отдает легкую
-мобильную подписку из `igareck/vpn-configs-for-russia` через отдельный fallback
-по зеркалам. Доступ открыт тем же тарифам с `includes_additional_profile`.
+AFZVPN Bot построен на базе open-source экосистемы `3xui-shop` и адаптирован под production-операции AFZVPN.
 
 Внешние источники правил для подписки обхода БС:
 

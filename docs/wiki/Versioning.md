@@ -1,18 +1,44 @@
 # Версионирование
 
-Версия проекта хранится в `VERSION`.
+Проект использует Semantic Versioning: `MAJOR.MINOR.PATCH`.
 
-Правила:
+Текущая версия хранится в `VERSION`.
 
-- `MAJOR` - несовместимые контракты или тяжелые миграции.
-- `MINOR` - новые пользовательские возможности без поломки существующих ссылок.
-- `PATCH` - исправления, тексты, документация и низкорисковые улучшения.
+## Правила
 
-Каждый релиз обновляет:
+| Тип | Когда повышать |
+| --- | --- |
+| `MAJOR` | несовместимые изменения URL, схемы данных, migrations или deploy-процесса |
+| `MINOR` | новые возможности без поломки существующих ссылок и пользовательских сценариев |
+| `PATCH` | исправления, тексты, документация, низкорисковые улучшения |
 
-- `VERSION`
-- `CHANGELOG.md`
-- Git tag `vX.Y.Z`
-- GitHub Release notes
+## Публичный Контракт
 
-Wiki-source хранится в `docs/wiki`, поэтому изменения wiki проходят через обычный pull request, changelog и релизный процесс.
+Считать публичным контрактом:
+
+- `/sub/{vpn_id}`;
+- `/wl-filtered/{vpn_id}`;
+- `/wl/{vpn_id}`;
+- `/connection`;
+- формат `plans.json`;
+- `.env.example`;
+- Alembic migrations;
+- user-facing Telegram navigation.
+
+## Каждый Релиз Обновляет
+
+- `VERSION`;
+- `CHANGELOG.md`;
+- Git tag `vX.Y.Z`;
+- GitHub Release notes;
+- wiki-source в `docs/wiki`, если менялись процессы или поведение.
+
+## Пример
+
+```bash
+printf "1.1.1\n" > VERSION
+git add VERSION CHANGELOG.md docs/wiki
+git commit -m "chore: release v1.1.1"
+git tag -a v1.1.1 -m "v1.1.1"
+git push origin main --tags
+```
