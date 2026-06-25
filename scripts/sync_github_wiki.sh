@@ -11,7 +11,7 @@ cleanup() {
 trap cleanup EXIT
 
 git clone "$wiki_remote" "$tmp_dir/wiki"
-rsync -a --delete "$repo_root/docs/wiki/" "$tmp_dir/wiki/"
+rsync -a --delete --exclude .git "$repo_root/docs/wiki/" "$tmp_dir/wiki/"
 
 cd "$tmp_dir/wiki"
 git add .
