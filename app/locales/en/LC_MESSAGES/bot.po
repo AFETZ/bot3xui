@@ -1016,11 +1016,12 @@ msgstr ""
 "🌍 Works where internet access is restricted\n"
 "🌐 Whitelist bypass is available on selected plans and is provided as is, without guarantees\n"
 "💳 Payment and renewal in a few clicks\n"
+"🌐 The personal cabinet can renew access without Telegram, the bot, or an active VPN\n"
 "\n"
 "📢 Subscribe to our <a href=\"https://t.me/AFetZEA\">news channel</a> "
 "to stay updated on news and promotions!\n"
 "\n"
-"Choose an action below to get started."
+"Save the “Renew on website” button in advance, then choose an action below."
 
 #: app/bot/routers/main_menu/keyboard.py:25
 msgid "referral:button:get_referred_trial"

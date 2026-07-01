@@ -2,6 +2,7 @@ import asyncio
 import logging
 from urllib.parse import urljoin, urlparse
 
+from aiohttp import web
 from aiogram import Bot, Dispatcher
 from aiogram.client.default import DefaultBotProperties
 from aiogram.client.session.aiohttp import AiohttpSession
@@ -12,8 +13,9 @@ from aiogram.fsm.storage.memory import MemoryStorage
 from aiogram.fsm.storage.redis import RedisStorage
 from aiogram.utils.i18n import I18n
 from aiogram.webhook.aiohttp_server import SimpleRequestHandler, setup_application
-from aiohttp.web import AppRunner, Application, Response, TCPSite, _run_app
+from aiohttp.web import AppRunner, Application, TCPSite, _run_app
 from redis.asyncio.client import Redis
+from sqlalchemy import text
 
 from app import logger
 from app.bot import filters, middlewares, routers, services, tasks
@@ -184,8 +186,64 @@ async def on_shutdown(db: Database, bot: Bot, services: ServicesContainer) -> No
     logging.info("Bot stopped.")
 
 
-async def healthcheck(_) -> Response:
-    return Response(text="ok")
+async def healthcheck(_) -> web.Response:
+    return web.Response(text="ok")
+
+
+async def _check_database(db: Database) -> dict[str, object]:
+    try:
+        async with db.session() as session:
+            await session.execute(text("SELECT 1"))
+    except Exception as exception:
+        logging.warning("Readiness database check failed: %s", exception)
+        return {"ok": False, "error": exception.__class__.__name__}
+    return {"ok": True}
+
+
+async def _check_redis(redis: Redis) -> dict[str, object]:
+    try:
+        await redis.ping()
+    except Exception as exception:
+        logging.warning("Readiness Redis check failed: %s", exception)
+        return {"ok": False, "error": exception.__class__.__name__}
+    return {"ok": True}
+
+
+def make_readiness_handler(
+    *,
+    db: Database,
+    redis: Redis,
+    services: ServicesContainer,
+):
+    async def readiness(_) -> web.Response:
+        checks = {
+            "database": await _check_database(db),
+            "redis": await _check_redis(redis),
+        }
+        ready = all(check["ok"] for check in checks.values())
+
+        xui_gateway = getattr(getattr(services, "vpn", None), "xui_gateway", None)
+        xui_health = (
+            xui_gateway.get_health_snapshot()
+            if xui_gateway and hasattr(xui_gateway, "get_health_snapshot")
+            else []
+        )
+        open_xui_circuits = sum(
+            1 for server in xui_health if server.get("circuit_open")
+        )
+        server_pool = getattr(getattr(services, "server_pool", None), "_servers", {})
+
+        payload = {
+            "status": "ok" if ready else "degraded",
+            "checks": checks,
+            "runtime": {
+                "servers_in_pool": len(server_pool),
+                "xui_circuits_open": open_xui_circuits,
+            },
+        }
+        return web.json_response(payload, status=200 if ready else 503)
+
+    return readiness
 
 
 async def start_runtime(
@@ -328,6 +386,14 @@ async def main() -> None:
             bot=bot,
             i18n=i18n,
             services=services_container,
+        )
+        app.router.add_get(
+            "/readyz",
+            make_readiness_handler(
+                db=db,
+                redis=storage.redis,
+                services=services_container,
+            ),
         )
 
         # Create the dispatcher

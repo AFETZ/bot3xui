@@ -6,8 +6,9 @@ import pytest
 from app.bot.models.plan import Plan
 from app.bot.models.subscription_data import SubscriptionData
 from app.bot.routers.main_menu.keyboard import main_menu_keyboard
-from app.bot.routers.subscription.keyboard import additional_profile_keyboard
+from app.bot.routers.subscription.keyboard import additional_profile_keyboard, subscription_keyboard
 from app.bot.routers.subscription.subscription_handler import (
+    _build_subscription_text,
     _build_additional_profile_text,
     callback_additional_profile,
 )
@@ -35,13 +36,52 @@ def patch_i18n(monkeypatch):
 
 
 def test_main_menu_keyboard_keeps_primary_inline_entrypoints():
-    markup = main_menu_keyboard()
+    markup = main_menu_keyboard(cabinet_url="https://cabinet.example/cabinet/vpn-1")
     texts = flatten_keyboard_texts(markup)
 
     assert "main_menu:button:profile" in texts
     assert "main_menu:button:subscription" in texts
+    assert "🌐 Продлить на сайте" in texts
     assert "main_menu:button:support" in texts
     assert "main_menu:button:news_channel" in texts
+
+
+def test_subscription_keyboard_contains_cabinet_renewal_button():
+    callback_data = SubscriptionData(
+        state=NavSubscription.PROCESS,
+        user_id=1,
+        plan_code="p3",
+    )
+
+    markup = subscription_keyboard(
+        has_subscription=True,
+        callback_data=callback_data,
+        cabinet_url="https://cabinet.example/cabinet/vpn-1",
+    )
+    buttons = [button for row in markup.inline_keyboard for button in row]
+
+    cabinet_buttons = [
+        button for button in buttons if button.text == "🌐 Продлить на сайте без VPN"
+    ]
+    assert len(cabinet_buttons) == 1
+    assert cabinet_buttons[0].url == "https://cabinet.example/cabinet/vpn-1"
+
+
+def test_subscription_text_explains_cabinet_renewal_path():
+    status = SubscriptionStatus(
+        user=SimpleNamespace(tg_id=1),
+        client_data=None,
+        plan=None,
+        is_active=False,
+        status_check_ok=True,
+        period_duration_days=None,
+        expiry_timestamp=None,
+    )
+
+    text = _build_subscription_text(status)
+
+    assert "без Telegram, бота и активного VPN" in text
+    assert "Продлить на сайте" in text
 
 
 def test_additional_profile_keyboard_contains_relevant_actions():

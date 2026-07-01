@@ -48,7 +48,8 @@ class FakeVPNService:
 
 
 class FakeNotificationService:
-    def __init__(self):
+    def __init__(self, config=None):
+        self.config = config
         self.messages = []
 
     async def notify_by_id(self, chat_id, text):
@@ -159,6 +160,51 @@ async def test_expiring_in_2_hours_uses_urgent_notification(monkeypatch):
     assert redis.set_calls[0][0] == (
         "user:notified:subscription_expiry:123:" f"{expiry_time}:3h"
     )
+
+
+@pytest.mark.asyncio
+async def test_expiry_notification_includes_cabinet_link_when_configured(monkeypatch):
+    expiry_time = _expiry_ms(20)
+    user = SimpleNamespace(
+        tg_id=123,
+        vpn_id="vpn-123",
+        language_code="ru",
+        server_id=1,
+        is_blocked=False,
+        current_period_started_at=None,
+        current_period_duration_days=None,
+    )
+    notification_service = FakeNotificationService(
+        config=SimpleNamespace(
+            bot=SimpleNamespace(
+                DOMAIN="bot.example",
+                CABINET_DOMAIN="sticker.example",
+            )
+        )
+    )
+    monkeypatch.setattr(
+        subscription_expiry.User,
+        "get_all",
+        AsyncMock(return_value=[user]),
+    )
+
+    await subscription_expiry.notify_users_with_expiring_subscription(
+        session_factory=DummySessionFactory(),
+        redis=FakeRedis(),
+        i18n=FakeI18n(),
+        vpn_service=FakeVPNService({user.tg_id: _client_data(expiry_time)}),
+        notification_service=notification_service,
+    )
+
+    assert notification_service.messages == [
+        (
+            123,
+            "task:message:subscription_expiry: 3 2 ч.\n\n"
+            "🌐 Запасной способ продления: сохраните личный кабинет заранее. "
+            "Он работает без Telegram, бота и активного VPN:\n"
+            "https://sticker.example/cabinet/vpn-123",
+        )
+    ]
 
 
 @pytest.mark.asyncio

@@ -45,7 +45,7 @@ scripts/sync_github_wiki.sh https://github.com/AFETZ/bot3xui.wiki.git
 ## После Деплоя
 
 1. Проверить логи.
-2. Проверить `/healthz`.
+2. Проверить `/healthz` и `/readyz`.
 3. Проверить Telegram bot response.
 4. Проверить активную `/sub/{vpn_id}`.
 5. Проверить кнопки подключения Happ.

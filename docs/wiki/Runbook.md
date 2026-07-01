@@ -24,7 +24,7 @@ docker compose up -d --build bot
 
 ## Не Открывается Основная Подписка
 
-1. Проверить `/healthz`.
+1. Проверить `/healthz` и `/readyz`.
 2. Проверить, активна ли подписка пользователя.
 3. Проверить доступность 3X-UI.
 4. Проверить логи `app.web.primary_profile`.
@@ -52,4 +52,4 @@ docker compose up -d --build bot
 2. Проверить последний стабильный commit или tag.
 3. Вернуть код на стабильный commit.
 4. Пересобрать bot service.
-5. Проверить `/healthz`, Telegram response и одну активную подписку.
+5. Проверить `/healthz`, `/readyz`, Telegram response и одну активную подписку.

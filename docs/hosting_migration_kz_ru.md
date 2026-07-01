@@ -126,6 +126,7 @@ PY
 Проверить вручную:
 
 - `BOT_DOMAIN` лучше оставить прежним доменом без `https://`;
+- `BOT_CABINET_DOMAIN` можно указать на отдельный незаблокированный домен для кабинета и продления без VPN;
 - `BOT_HOST` должен совпадать с публичным host reverse proxy;
 - `BOT_PROXY_URL` оставить пустым, если на KZ-хосте нет локального SOCKS5 на `127.0.0.1:10808`;
 - `XUI_USERNAME`/`XUI_PASSWORD` должны подходить к новой 3X-UI панели;
@@ -134,7 +135,7 @@ PY
 
 ## Reverse proxy и DNS
 
-Предпочтительный вариант: оставить старый `BOT_DOMAIN` и перевести A/AAAA-запись на KZ IP. Тогда старые `/sub/<vpn_id>` ссылки у пользователей продолжат работать.
+Предпочтительный вариант: оставить старый `BOT_DOMAIN` для `/sub/<vpn_id>`, чтобы старые ссылки пользователей продолжили работать. Для веб-кабинета можно добавить отдельный `BOT_CABINET_DOMAIN`, который ведет на тот же web app, но не используется как VPN-нода.
 
 На новом хосте внешний HTTPS должен проксировать на `http://127.0.0.1:8080` или на docker host gateway. В репозитории есть пример `deploy/traefik-3xui-shop.yml`.
 
@@ -147,12 +148,14 @@ cd /home/andrey/apps/3xui-shop
 docker compose up -d --build redis bot
 docker compose ps
 curl -i http://127.0.0.1:8080/healthz
+curl -fsS http://127.0.0.1:8080/readyz
 docker compose logs --tail=120 bot
 ```
 
 Проверить:
 
 - в логах нет `Traceback`/`CRITICAL`;
+- `/readyz` возвращает `status: ok`;
 - server pool успешно логинится в новый 3X-UI;
 - Telegram-бот отвечает;
 - админка видит пользователей и сервер;

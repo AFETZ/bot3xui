@@ -3,6 +3,7 @@ from enum import Enum
 
 class NavMain(str, Enum):
     START = "start"
+    MENU = "menu"
     MAIN_MENU = "main_menu"
     CLOSE_NOTIFICATION = "close_notification"
     REDIRECT_TO_DOWNLOAD = "redirect_to_download"

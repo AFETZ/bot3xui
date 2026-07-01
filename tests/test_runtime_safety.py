@@ -1,5 +1,7 @@
 import asyncio
+import json
 import logging
+from types import SimpleNamespace
 
 import pytest
 from aiogram.exceptions import TelegramNetworkError
@@ -15,6 +17,90 @@ def test_normalize_bot_domain_accepts_plain_host_and_full_url():
     assert normalize_bot_domain("example.com") == "https://example.com"
     assert normalize_bot_domain("https://example.com/") == "https://example.com"
     assert normalize_bot_domain("http://example.com") == "http://example.com"
+
+
+class FakeSession:
+    def __init__(self, *, error=None):
+        self.error = error
+
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, exc_type, exc, tb):
+        return False
+
+    async def execute(self, _):
+        if self.error:
+            raise self.error
+        return None
+
+
+class FakeSessionFactory:
+    def __init__(self, *, error=None):
+        self.error = error
+
+    def __call__(self):
+        return FakeSession(error=self.error)
+
+
+class FakeRedis:
+    def __init__(self, *, error=None):
+        self.error = error
+
+    async def ping(self):
+        if self.error:
+            raise self.error
+        return True
+
+
+def _readiness_services(*, circuit_open=False):
+    return SimpleNamespace(
+        server_pool=SimpleNamespace(_servers={1: object(), 2: object()}),
+        vpn=SimpleNamespace(
+            xui_gateway=SimpleNamespace(
+                get_health_snapshot=lambda: [
+                    {"server_id": 1, "circuit_open": circuit_open}
+                ]
+            )
+        ),
+    )
+
+
+async def test_readiness_handler_returns_ok_when_dependencies_answer():
+    handler = runtime.make_readiness_handler(
+        db=SimpleNamespace(session=FakeSessionFactory()),
+        redis=FakeRedis(),
+        services=_readiness_services(circuit_open=True),
+    )
+
+    response = await handler(None)
+    payload = json.loads(response.text)
+
+    assert response.status == 200
+    assert payload["status"] == "ok"
+    assert payload["checks"]["database"]["ok"] is True
+    assert payload["checks"]["redis"]["ok"] is True
+    assert payload["runtime"]["servers_in_pool"] == 2
+    assert payload["runtime"]["xui_circuits_open"] == 1
+
+
+async def test_readiness_handler_returns_503_when_dependency_fails():
+    handler = runtime.make_readiness_handler(
+        db=SimpleNamespace(session=FakeSessionFactory(error=RuntimeError("db down"))),
+        redis=FakeRedis(),
+        services=_readiness_services(),
+    )
+
+    response = await handler(None)
+    payload = json.loads(response.text)
+
+    assert response.status == 503
+    assert payload["status"] == "degraded"
+    assert payload["checks"]["database"] == {
+        "ok": False,
+        "error": "RuntimeError",
+    }
+    assert payload["checks"]["redis"]["ok"] is True
 
 
 async def test_resolve_telegram_proxy_url_keeps_reachable_proxy():

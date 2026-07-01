@@ -77,6 +77,7 @@ Telegram user
 | Route | Назначение |
 | --- | --- |
 | `/healthz` | health check |
+| `/readyz` | readiness check: БД, Redis и runtime-сводка |
 | `/webhook` | Telegram webhook endpoint |
 | `/connection` | redirect для Happ deep-links |
 | `/sub/{vpn_id}` | основная подписка |
@@ -111,7 +112,8 @@ docker logs --tail=120 3xui-shop-bot
 | Variable | Для чего |
 | --- | --- |
 | `BOT_TOKEN` | токен Telegram-бота |
-| `BOT_DOMAIN` | публичный HTTPS base URL |
+| `BOT_DOMAIN` | публичный HTTPS base URL для бота и подписок |
+| `BOT_CABINET_DOMAIN` | отдельный HTTPS base URL для кабинета/продления без VPN |
 | `BOT_USE_WEBHOOK` | `True` для webhook, `False` для polling |
 | `BOT_PROXY_URL` | SOCKS5 proxy для Telegram API, если нужен |
 | `XUI_USERNAME`, `XUI_PASSWORD` | доступ к 3X-UI |
@@ -125,6 +127,7 @@ docker logs --tail=120 3xui-shop-bot
 
 Тарифы описываются в [plans.json](plans.json). Важные поля:
 
+- `durations` - доступные сроки; сейчас используются `30`, `60`, `90`, `180` дней без годового тарифа;
 - `code` - стабильный код тарифа;
 - `title` - название для пользователя;
 - `devices` - лимит устройств;
@@ -148,7 +151,7 @@ docker run --rm -v "$PWD:/repo" -w /repo 3xui-shop-bot \
   sh -lc 'poetry install --no-interaction --no-root && poetry run python -m pytest tests'
 ```
 
-Последний полный baseline-прогон: `112 passed`.
+Последний полный baseline-прогон: `128 passed`.
 
 ## Документация
 

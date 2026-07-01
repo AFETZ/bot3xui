@@ -14,8 +14,8 @@ from app.bot.services.subscription import SubscriptionService
 
 logger = logging.getLogger(__name__)
 
-PROFILE_TITLE_PREFIX = "AFETZ VPN"
-PROFILE_AGGREGATED_TITLE = PROFILE_TITLE_PREFIX
+PROFILE_TITLE = "AVS: AFETZ VPN SERVICE"
+PROFILE_AGGREGATED_TITLE = PROFILE_TITLE
 PROFILE_UPDATE_INTERVAL_HOURS = "12"
 PROFILE_HEALTH_TTL_SECONDS = 10 * 60
 PROFILE_SLOW_LATENCY_MS = 1500
@@ -36,11 +36,12 @@ PROFILE_LINE_REFRESH_SECONDS = 24 * 60 * 60
 # If a user was recently served an active profile, a sudden "no client data"
 # is treated as a transient panel error instead of wiping their nodes.
 RECENTLY_ACTIVE_SECONDS = 24 * 60 * 60
+PROFILE_UPSTREAM_TIMEOUT_SECONDS = 4
 PROFILE_SERVER_LABELS = {
-    "FI": "Finland",
-    "FINLAND": "Finland",
-    "KZ": "Kazakhstan",
-    "KAZAKHSTAN": "Kazakhstan",
+    "FI": "🇫🇮 Финляндия",
+    "FINLAND": "🇫🇮 Финляндия",
+    "KZ": "🇰🇿 Казахстан",
+    "KAZAKHSTAN": "🇰🇿 Казахстан",
 }
 FORWARDED_HEADERS = (
     "content-type",
@@ -211,7 +212,7 @@ def _normalize_forwarded_headers(upstream_headers: dict[str, str]) -> dict[str, 
 
 
 def _safe_profile_title_value(value: str) -> str | None:
-    title = value.encode("ascii", errors="ignore").decode("ascii").strip()
+    title = value.replace("\r", " ").replace("\n", " ").strip()
     return title or None
 
 
@@ -220,8 +221,10 @@ def _server_label(server) -> str | None:
         return None
 
     location = (getattr(server, "location", "") or "").upper()
+    name = (getattr(server, "name", "") or "").upper()
     return (
         PROFILE_SERVER_LABELS.get(location)
+        or PROFILE_SERVER_LABELS.get(name)
         or getattr(server, "name", None)
         or getattr(server, "location", None)
     )
@@ -232,7 +235,7 @@ def _quality_marker(latency_ms: int | None) -> str:
         return ""
     if latency_ms > PROFILE_SLOW_LATENCY_MS:
         return "[SLOW] "
-    return "[OK] "
+    return ""
 
 
 def _build_profile_title_for_server(server, *, marker: str = "") -> str | None:
@@ -240,11 +243,11 @@ def _build_profile_title_for_server(server, *, marker: str = "") -> str | None:
     if not label:
         return None
 
-    return _safe_profile_title_value(f"{marker}{PROFILE_TITLE_PREFIX} {label}")
+    return _safe_profile_title_value(f"{marker}{label}")
 
 
 def _build_profile_title(user) -> str | None:
-    return _build_profile_title_for_server(getattr(user, "server", None))
+    return _safe_profile_title_value(PROFILE_TITLE)
 
 
 def _base64_decode_padded(value: str) -> bytes:
@@ -310,7 +313,7 @@ def _rename_profile_line(line: str, server, *, marker: str = "") -> str | None:
     if not stripped.startswith(PROFILE_NODE_PREFIXES):
         return None
 
-    title = _build_profile_title_for_server(server, marker=marker) or PROFILE_TITLE_PREFIX
+    title = _build_profile_title_for_server(server, marker=marker) or PROFILE_TITLE
     if stripped.startswith("vmess://"):
         return _rename_vmess_profile(stripped, title)
     return _rename_uri_profile(stripped, title)
@@ -393,7 +396,7 @@ def _build_inactive_profile_response(
         "cache-control": "no-store, no-cache, must-revalidate",
         "pragma": "no-cache",
         "expires": "0",
-        "profile-title": f"{PROFILE_TITLE_PREFIX} Expired",
+        "profile-title": f"{PROFILE_TITLE} Expired",
     }
     if cabinet_url:
         headers["profile-web-page-url"] = cabinet_url
@@ -441,6 +444,12 @@ class PrimaryProfileProxy:
         if health and not health.ok:
             return (2, 999_999, _server_cache_key(server))
         return (1, 999_999, _server_cache_key(server))
+
+    def _is_recently_unhealthy_source(self, source) -> bool:
+        health = self._source_health.get(_server_cache_key(getattr(source, "server", None)))
+        if not health or health.ok:
+            return False
+        return time.monotonic() - health.checked_at <= PROFILE_HEALTH_TTL_SECONDS
 
     def _stabilize_profile_lines(
         self,
@@ -582,6 +591,50 @@ class PrimaryProfileProxy:
             latency_ms=latency_ms,
         )
 
+    async def _fetch_and_validate_profile_sources(
+        self,
+        *,
+        session: aiohttp.ClientSession,
+        sources,
+        user,
+        user_agent: str,
+    ) -> tuple[list[tuple[object, UpstreamProfileSnapshot | None]], list[UpstreamProfileSnapshot]]:
+        async def fetch_one(source) -> tuple[object, UpstreamProfileSnapshot | None]:
+            snapshot = await self._fetch_profile_source(
+                session=session,
+                source=source,
+                user=user,
+                user_agent=user_agent,
+            )
+            if not snapshot:
+                return source, None
+
+            try:
+                _normalize_profile_body_or_raise(
+                    snapshot.body_bytes,
+                    snapshot.headers,
+                    context="aggregated",
+                )
+            except web.HTTPBadGateway:
+                self._record_source_health(
+                    snapshot.server,
+                    ok=False,
+                    latency_ms=snapshot.latency_ms,
+                    reason="invalid_profile",
+                )
+                return source, None
+
+            self._record_source_health(
+                snapshot.server,
+                ok=True,
+                latency_ms=snapshot.latency_ms,
+            )
+            return source, snapshot
+
+        fetch_results = await asyncio.gather(*(fetch_one(source) for source in sources))
+        snapshots = [snapshot for _, snapshot in fetch_results if snapshot is not None]
+        return list(fetch_results), snapshots
+
     async def _handle_profile_sources(
         self,
         *,
@@ -591,41 +644,40 @@ class PrimaryProfileProxy:
         user_agent: str,
         raw_format: bool = False,
     ) -> web.Response:
-        timeout = ClientTimeout(total=15)
-        fetch_results: list[tuple[object, UpstreamProfileSnapshot | None]] = []
-        snapshots: list[UpstreamProfileSnapshot] = []
+        timeout = ClientTimeout(total=PROFILE_UPSTREAM_TIMEOUT_SECONDS)
+        active_sources = [
+            source for source in sources if not self._is_recently_unhealthy_source(source)
+        ]
+        deferred_sources = [
+            source for source in sources if self._is_recently_unhealthy_source(source)
+        ]
+
+        if not active_sources:
+            active_sources = list(sources)
+            deferred_sources = []
 
         async with aiohttp.ClientSession(timeout=timeout) as session:
-            for source in sources:
-                snapshot = await self._fetch_profile_source(
+            fetch_results, snapshots = await self._fetch_and_validate_profile_sources(
+                session=session,
+                sources=active_sources,
+                user=user,
+                user_agent=user_agent,
+            )
+
+            if snapshots:
+                fetch_results.extend((source, None) for source in deferred_sources)
+            elif deferred_sources:
+                (
+                    deferred_results,
+                    deferred_snapshots,
+                ) = await self._fetch_and_validate_profile_sources(
                     session=session,
-                    source=source,
+                    sources=deferred_sources,
                     user=user,
                     user_agent=user_agent,
                 )
-                fetch_results.append((source, snapshot))
-                if snapshot:
-                    try:
-                        _normalize_profile_body_or_raise(
-                            snapshot.body_bytes,
-                            snapshot.headers,
-                            context="aggregated",
-                        )
-                    except web.HTTPBadGateway:
-                        self._record_source_health(
-                            snapshot.server,
-                            ok=False,
-                            latency_ms=snapshot.latency_ms,
-                            reason="invalid_profile",
-                        )
-                        fetch_results[-1] = (source, None)
-                        continue
-                    self._record_source_health(
-                        snapshot.server,
-                        ok=True,
-                        latency_ms=snapshot.latency_ms,
-                    )
-                    snapshots.append(snapshot)
+                fetch_results.extend(deferred_results)
+                snapshots.extend(deferred_snapshots)
 
         if not snapshots:
             error_id = _new_error_id()
@@ -679,7 +731,7 @@ class PrimaryProfileProxy:
         response_headers = _normalize_forwarded_headers(header_snapshot.headers)
         response_headers["profile-title"] = PROFILE_AGGREGATED_TITLE
         if raw_format:
-            response_headers["profile-title"] = f"{PROFILE_TITLE_PREFIX} Raw"
+            response_headers["profile-title"] = f"{PROFILE_TITLE} Raw"
         _apply_happ_stability_headers(response_headers)
 
         cabinet_url = _build_cabinet_url(self.subscription_service, user)
@@ -851,7 +903,7 @@ class PrimaryProfileProxy:
         if profile_title:
             response_headers["profile-title"] = profile_title
         if requested_format == "raw":
-            response_headers["profile-title"] = f"{PROFILE_TITLE_PREFIX} Raw"
+            response_headers["profile-title"] = f"{PROFILE_TITLE} Raw"
         _apply_happ_stability_headers(response_headers)
         cabinet_url = _build_cabinet_url(self.subscription_service, user)
         if cabinet_url:

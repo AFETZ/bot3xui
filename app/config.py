@@ -73,6 +73,7 @@ class BotConfig:
     DEV_ID: int
     SUPPORT_ID: int
     DOMAIN: str
+    CABINET_DOMAIN: str | None
     PORT: int
     START_IMAGE: str | None
     PROXY_URL: str | None
@@ -308,6 +309,11 @@ def load_config() -> Config:
             DEV_ID=env.int("BOT_DEV_ID"),
             SUPPORT_ID=env.int("BOT_SUPPORT_ID"),
             DOMAIN=normalize_bot_domain(env.str("BOT_DOMAIN")),
+            CABINET_DOMAIN=(
+                normalize_bot_domain(cabinet_domain)
+                if (cabinet_domain := env.str("BOT_CABINET_DOMAIN", default=None))
+                else None
+            ),
             PORT=env.int("BOT_PORT", default=DEFAULT_BOT_PORT),
             START_IMAGE=env.str("BOT_START_IMAGE", default=None),
             PROXY_URL=env.str("BOT_PROXY_URL", default=None),

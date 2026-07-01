@@ -136,6 +136,24 @@ def test_password_hash_verifies_only_matching_password():
 
 
 @pytest.mark.asyncio
+async def test_public_page_loads_template(cabinet):
+    response = await cabinet.public_page(SimpleNamespace())
+
+    assert response.status == 200
+    assert "Продление VPN без бота" in response.text
+    assert response.headers["X-Frame-Options"] == "DENY"
+
+
+@pytest.mark.asyncio
+async def test_cabinet_page_injects_api_base(cabinet):
+    response = await cabinet.page(SimpleNamespace(match_info={"vpn_id": "vpn-1"}))
+
+    assert response.status == 200
+    assert 'window.CABINET_API_BASE = "/cabinet/vpn-1/api";' in response.text
+    assert "__API_BASE__" not in response.text
+
+
+@pytest.mark.asyncio
 async def test_cabinet_builds_purchase_payment_data_for_inactive_user(
     cabinet,
     plan,

@@ -30,6 +30,7 @@ Telegram
 | Route | Назначение |
 | --- | --- |
 | `/healthz` | health check |
+| `/readyz` | readiness check: БД, Redis и runtime-сводка |
 | `/webhook` | Telegram webhook endpoint |
 | `/connection` | redirect для Happ deep-links |
 | `/sub/{vpn_id}` | основная подписка |

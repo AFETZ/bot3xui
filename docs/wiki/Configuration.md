@@ -8,6 +8,7 @@
 
 - Telegram: `BOT_TOKEN`, `BOT_ADMINS`, `BOT_DEV_ID`;
 - публичный домен: `BOT_DOMAIN`, `BOT_HOST`;
+- отдельный домен кабинета: `BOT_CABINET_DOMAIN` - если задан, ссылки на кабинет и payment return URL строятся на нем, а подписки остаются на `BOT_DOMAIN`;
 - режим Telegram updates: `BOT_USE_WEBHOOK`;
 - proxy: `BOT_PROXY_URL`, `BOT_PROXY_STRICT`, `BOT_PROXY_CHECK_TIMEOUT`;
 - 3X-UI: `XUI_USERNAME`, `XUI_PASSWORD`, `XUI_SUBSCRIPTION_*`;
@@ -17,6 +18,7 @@
 ## `plans.json`
 
 Тарифы задаются в `plans.json`.
+Текущая витрина использует сроки `30`, `60`, `90` и `180` дней; годовой срок намеренно не продается.
 
 Важные поля:
 

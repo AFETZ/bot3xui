@@ -66,6 +66,12 @@ services:
         soft: 65536
         hard: 65536
     logging: *default-logging
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import os, urllib.request; urllib.request.urlopen('http://127.0.0.1:%s/readyz' % os.getenv('BOT_PORT', '8080'), timeout=3).read()\" >/dev/null 2>&1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
     command: sh -c " 
       poetry run pybabel compile -d /app/locales -D bot && 
       poetry run alembic -c /app/db/alembic.ini upgrade head && 

@@ -15,6 +15,11 @@ from datetime import datetime, timezone
 from sqlalchemy.ext.asyncio import async_sessionmaker
 
 from app.bot.services.subscription_state import client_data_from_user_snapshot
+from app.bot.utils.cabinet_links import (
+    cabinet_base_url,
+    cabinet_url_for_user,
+    public_base_url,
+)
 from app.bot.utils.constants import Currency
 from app.bot.utils.formatting import format_date, normalize_price
 from app.bot.utils.time import get_current_timestamp
@@ -183,10 +188,10 @@ class SubscriptionService:
         return status.status_check_ok and status.has_additional_profile
 
     def _public_base_url(self) -> str:
-        domain = self.config.bot.DOMAIN.rstrip("/")
-        if not domain.startswith(("http://", "https://")):
-            domain = f"https://{domain}"
-        return domain
+        return public_base_url(self.config) or ""
+
+    def _cabinet_base_url(self) -> str:
+        return cabinet_base_url(self.config) or self._public_base_url()
 
     def get_additional_profile_url(self, user: User) -> str:
         return f"{self._public_base_url()}/wl/{user.vpn_id}"
@@ -195,7 +200,10 @@ class SubscriptionService:
         return f"{self._public_base_url()}/wl-filtered/{user.vpn_id}"
 
     def get_cabinet_url(self, user: User) -> str:
-        return f"{self._public_base_url()}/cabinet/{user.vpn_id}"
+        return (
+            cabinet_url_for_user(self.config, user)
+            or f"{self._cabinet_base_url()}/cabinet/{user.vpn_id}"
+        )
 
     async def get_upstream_profile_url(self, user: User) -> str | None:
         return await self.vpn_service.get_upstream_key(user)

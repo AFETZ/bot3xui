@@ -17,6 +17,7 @@ from aiogram.utils.i18n import lazy_gettext as __
 from app.bot.models.subscription_data import SubscriptionData
 from app.bot.routers.misc.keyboard import close_notification_keyboard
 from app.bot.routers.subscription.keyboard import payment_success_keyboard
+from app.bot.utils.cabinet_links import cabinet_save_hint
 from app.bot.utils.constants import SUCCESS_MESSAGE_EFFECT_ID, UPGRADE_MESSAGE_EFFECT_ID
 from app.bot.utils.formatting import format_device_count, format_subscription_period
 from app.config import Config
@@ -164,11 +165,14 @@ class NotificationService:
         self,
         user_id: int,
         key: str,
+        cabinet_url: str | None = None,
         message_effect_id: str | None = SUCCESS_MESSAGE_EFFECT_ID,
     ) -> None:
         await self.notify_by_id(
             chat_id=user_id,
-            text=__("payment:message:purchase_success").format(key=key),
+            text=__(
+                "payment:message:purchase_success"
+            ).format(key=key) + cabinet_save_hint(cabinet_url),
             message_effect_id=message_effect_id,
             reply_markup=payment_success_keyboard(),
         )
@@ -177,13 +181,14 @@ class NotificationService:
         self,
         user_id: int,
         data: SubscriptionData,
+        cabinet_url: str | None = None,
         message_effect_id: str | None = SUCCESS_MESSAGE_EFFECT_ID,
     ) -> None:
         await self.notify_by_id(
             chat_id=user_id,
             text=__("payment:message:extend_success").format(
                 duration=format_subscription_period(data.duration)
-            ),
+            ) + cabinet_save_hint(cabinet_url),
             message_effect_id=message_effect_id,
         )
 
@@ -192,13 +197,14 @@ class NotificationService:
         user_id: int,
         data: SubscriptionData,
         plan_title: str = "",
+        cabinet_url: str | None = None,
         message_effect_id: str | None = SUCCESS_MESSAGE_EFFECT_ID,
     ) -> None:
         await self.notify_by_id(
             chat_id=user_id,
             text=__("payment:message:change_success").format(
                 plan=plan_title or format_device_count(data.devices),
-            ),
+            ) + cabinet_save_hint(cabinet_url),
             message_effect_id=message_effect_id,
         )
 
@@ -206,6 +212,7 @@ class NotificationService:
         self,
         user_id: int,
         plan_title: str,
+        cabinet_url: str | None = None,
         message_effect_id: str | None = UPGRADE_MESSAGE_EFFECT_ID,
     ) -> None:
         await self.notify_by_id(
@@ -215,6 +222,6 @@ class NotificationService:
                 f"Ваш тариф обновлён до {plan_title}.\n"
                 "Подписка обхода БС уже доступна на экране подключения.\n"
                 "Следующее продление будет предложено уже для тарифа с обходом БС."
-            ),
+            ) + cabinet_save_hint(cabinet_url),
             message_effect_id=message_effect_id,
         )

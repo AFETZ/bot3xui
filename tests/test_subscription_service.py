@@ -32,7 +32,7 @@ class FakePlanService:
                 self._public_plans_by_offer_key.setdefault(plan.commercial_key, plan)
 
     def get_durations(self):
-        return [30, 60, 180, 365]
+        return [30, 60, 90, 180]
 
     def get_plan(self, devices, *, includes_additional_profile=False):
         return self._public_plans_by_offer_key.get((devices, includes_additional_profile))
@@ -662,6 +662,29 @@ def test_get_filtered_additional_profile_url_uses_domain_and_vpn_id(subscription
     assert (
         subscription_service.get_filtered_additional_profile_url(user)
         == "https://bot.example/wl-filtered/vpn-501"
+    )
+
+
+def test_get_cabinet_url_uses_public_domain_by_default(subscription_service):
+    user = SimpleNamespace(vpn_id="vpn-502")
+
+    assert (
+        subscription_service.get_cabinet_url(user)
+        == "https://bot.example/cabinet/vpn-502"
+    )
+
+
+def test_get_cabinet_url_can_use_separate_cabinet_domain(subscription_service):
+    user = SimpleNamespace(vpn_id="vpn-503")
+    subscription_service.config.bot.CABINET_DOMAIN = "https://pay.example"
+
+    assert (
+        subscription_service.get_cabinet_url(user)
+        == "https://pay.example/cabinet/vpn-503"
+    )
+    assert (
+        subscription_service.get_additional_profile_url(user)
+        == "https://bot.example/wl/vpn-503"
     )
 
 
